@@ -464,7 +464,7 @@ export default function App() {
   return (
     <div>
       <div className="header">
-        <h1>⚙️ WARMUP 2.0 Riders Training </h1>
+        <h1>🔥WARMUP 2.0 BMX🔥 </h1>
         <div className="routine-selector">
           <button className={`tab-btn ${activeTab === 'classique' ? 'active' : ''}`} onClick={() => setActiveTab('classique')}>CLASS.</button>
           <button className={`tab-btn ${activeTab === 'routineA' ? 'active' : ''}`} onClick={() => setActiveTab('routineA')}>ROUT. A</button>
