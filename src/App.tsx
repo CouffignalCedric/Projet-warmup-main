@@ -471,7 +471,7 @@ export default function App() {
           <button className={`tab-btn ${activeTab === 'routineB' ? 'active' : ''}`} onClick={() => setActiveTab('routineB')}>ROUT. B</button>
           <button className={`tab-btn ${activeTab === 'routineC' ? 'active' : ''}`} onClick={() => setActiveTab('routineC')}>ROUT. C</button>
           <button className={`tab-btn ${activeTab === 'routineD' ? 'active' : ''}`} onClick={() => setActiveTab('routineD')}>ROUT. D</button>
-          <button className={`tab-btn ${activeTab === 'sheet' ? 'active' : ''}`} onClick={() => setActiveTab('sheet')}>📊 RECAp'</button>
+    {/*     <button className={`tab-btn ${activeTab === 'sheet' ? 'active' : ''}`} onClick={() => setActiveTab('sheet')}>📊 RECAp'</button> */}
         </div>
       </div>
 
@@ -596,6 +596,10 @@ export default function App() {
           <div className="card-header"><span className="card-title">🚀 3. SPRINTS DE SECTION</span><span className="badge-time">⏱️ 3 MIN</span></div>
           <div className="consignes"><strong>Objectif : Garder de la vitesse sur la piste.</strong><ul><li>{getWorkoutConfig(age).sprintDesc}</li></ul></div>
           {renderGrid('grid-sprint-routineB', 'sprint', 3, 'A', 180)}
+        </div>
+        <div className="card">
+          <div className="card-header"><span className="card-title">🧘 4. RETOUR AU CALME</span><span className="badge-time">⏱️ 2 MIN</span></div>
+          <button className={`btn-check-list ${doneTasks['card-routineB-4'] ? 'done' : ''}`} onClick={() => toggleTask('card-routineB-4', 120, false)}><span>🧘 On souffle et on détend tout le corps</span> <span>{doneTasks['card-routineB-4'] ? '☑' : '☐'}</span></button>
         </div>
       </div>
 
