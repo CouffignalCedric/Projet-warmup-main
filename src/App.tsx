@@ -1,22 +1,20 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 
-// 🎵 Nom de votre fichier unique situé dans le dossier public/ (ajustez l'extension si besoin : .mp3, .wav...)
 const SOUND_BMX_GATE = '/watch_the_gate.mp3' 
-const SOUND_SINGLE_BEEP = '/beep.mp3'
 
-type GridDef = { id: string; type: 'gate' | 'sprint'; base: number; prefix: string }
+type GridDef = { id: string; type: 'gate' | 'sprint'; base: number; prefix: string; name: string; routine: string }
 
 const GRIDS: GridDef[] = [
-  { id: 'grid-gate-classique', type: 'gate', base: 4, prefix: 'G' },
-  { id: 'grid-turbo-classique', type: 'sprint', base: 4, prefix: 'V' },
-  { id: 'grid-force-routineA', type: 'sprint', base: 4, prefix: 'F' },
-  { id: 'grid-relance-routineA', type: 'gate', base: 4, prefix: 'R' },
-  { id: 'grid-gate-routineB', type: 'gate', base: 5, prefix: 'G' },
-  { id: 'grid-sprint-routineB', type: 'sprint', base: 3, prefix: 'A' },
-  { id: 'grid-long-routineC', type: 'sprint', base: 3, prefix: 'L' },
-  { id: 'grid-relance-routineC', type: 'gate', base: 4, prefix: 'RA' },
-  { id: 'grid-freq-routineD', type: 'sprint', base: 4, prefix: 'V' },
-  { id: 'grid-flash-routineD', type: 'gate', base: 4, prefix: 'EF' }
+  { id: 'grid-gate-classique', type: 'gate', base: 4, prefix: 'G', name: 'Départs sur la grille', routine: 'Classique' },
+  { id: 'grid-turbo-classique', type: 'sprint', base: 4, prefix: 'V', name: 'Sprints de vitesse', routine: 'Classique' },
+  { id: 'grid-force-routineA', type: 'sprint', base: 4, prefix: 'F', name: 'Exercices de force', routine: 'Routine A' },
+  { id: 'grid-relance-routineA', type: 'gate', base: 4, prefix: 'R', name: 'Relances après les virages', routine: 'Routine A' },
+  { id: 'grid-gate-routineB', type: 'gate', base: 5, prefix: 'G', name: 'Enchaînements de grilles', routine: 'Routine B' },
+  { id: 'grid-sprint-routineB', type: 'sprint', base: 3, prefix: 'A', name: 'Sprints de section', routine: 'Routine B' },
+  { id: 'grid-long-routineC', type: 'sprint', base: 3, prefix: 'L', name: 'Tenir jusqu’à la fin', routine: 'Routine C' },
+  { id: 'grid-relance-routineC', type: 'gate', base: 4, prefix: 'RA', name: 'Multi-relances', routine: 'Routine C' },
+  { id: 'grid-freq-routineD', type: 'sprint', base: 4, prefix: 'V', name: 'Vitesse maximum des jambes', routine: 'Routine D' },
+  { id: 'grid-flash-routineD', type: 'gate', base: 4, prefix: 'EF', name: 'Jeux de réflexes (Flash)', routine: 'Routine D' }
 ]
 
 const DEFAULT_EXERCISE_DURATION: Record<string, number> = {
@@ -41,18 +39,18 @@ function getWorkoutConfig(ageValue: string) {
       gateRest: 60,
       sprintEffort: 15,
       sprintRest: 60,
-      gateDesc: 'Départ maximal sec de 5 secondes. Arrachage de grille.',
-      sprintDesc: 'Sprint lactique intense de 15 secondes.'
+      gateDesc: 'Pars comme un éclair dès que le signal retentit !',
+      sprintDesc: 'Donne tout ce que tu as sur tes pédales sans rebondir sur la selle.'
     }
   const age = parseInt(ageValue)
   const gateEffort = Math.round(3 + ((age - 8) / 9) * 2)
   const sprintEffort = Math.round(6 + ((age - 8) / 9) * 5)
   const restTime = Math.round(30 + ((age - 8) / 9) * 20)
   let sprintDesc = `Sprint de ${sprintEffort} secondes. `
-  if (age <= 10) sprintDesc += 'Garde le haut du corps gainé, vélocité fluide sans rebondir sur la selle.'
-  else if (age <= 14) sprintDesc += 'Tire sur tes pédales, engagement complet du haut du corps.'
-  else sprintDesc += 'Recrutement maximal de la filière anaérobie.'
-  const gateDesc = `Effort explosif de ${gateEffort} secondes, suivi de ${restTime} secondes de récupération active.`
+  if (age <= 10) sprintDesc += 'Garde le haut du corps bien droit et pédale super vite sans sautiller sur ta selle !'
+  else if (age <= 14) sprintDesc += 'Tire bien sur ton guidon et pousse sur tes pédales avec toute ton énergie.'
+  else sprintDesc += 'Effort intense, donne ton maximum !'
+  const gateDesc = `Effort de ${gateEffort} secondes à fond, puis ${restTime} secondes de repos pour souffler.`
   return { gateEffort, gateRest: restTime, sprintEffort, sprintRest: restTime, gateDesc, sprintDesc }
 }
 
@@ -85,7 +83,6 @@ export default function App() {
     return secs === 0 ? `${minutes} min` : `${minutes} min ${secs}s`
   }
 
-  // timer
   const [timerSeconds, setTimerSeconds] = useState<number>(0)
   const [isRunning, setIsRunning] = useState(false)
   const timerRef = useRef<number | null>(null)
@@ -93,6 +90,7 @@ export default function App() {
   const savedRest = useRef<number>(35)
   const totalTaskDuration = useRef<number>(0)
   const isRandomBeepMode = useRef<boolean>(false)
+  const lastBeepTimerSeconds = useRef<number>(9999)
   const currentAudioRef = useRef<HTMLAudioElement | null>(null)
 
   useEffect(() => {
@@ -103,15 +101,46 @@ export default function App() {
 
   const audioCtxRef = useRef<AudioContext | null>(null)
   function unlockAudio() {
-    if (!audioCtxRef.current) audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)()
-    if (audioCtxRef.current.state === 'suspended') audioCtxRef.current.resume()
+    if (!audioCtxRef.current) {
+      audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)()
+    }
+    if (audioCtxRef.current.state === 'suspended') {
+      audioCtxRef.current.resume()
+    }
   }
 
-  // 🔊 Joue le bip isolé (pour les exercices d'agilité/réactivité)
-  function playSingleRandomBeep() {
+  function playDoubleBeep() {
     unlockAudio()
-    const audio = new Audio(SOUND_SINGLE_BEEP)
-    audio.play().catch(err => console.log('Erreur lecture MP3 bip:', err))
+    if (audioCtxRef.current) {
+      try {
+        const ctx = audioCtxRef.current
+        const now = ctx.currentTime
+
+        const osc1 = ctx.createOscillator()
+        const gain1 = ctx.createGain()
+        osc1.type = 'sine'
+        osc1.frequency.setValueAtTime(880, now)
+        gain1.gain.setValueAtTime(0.15, now)
+        gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.12)
+        osc1.connect(gain1)
+        gain1.connect(ctx.destination)
+        osc1.start(now)
+        osc1.stop(now + 0.12)
+
+        const osc2 = ctx.createOscillator()
+        const gain2 = ctx.createGain()
+        osc2.type = 'sine'
+        osc2.frequency.setValueAtTime(1174.66, now + 0.18)
+        gain2.gain.setValueAtTime(0.15, now + 0.18)
+        gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.3)
+        osc2.connect(gain2)
+        gain2.connect(ctx.destination)
+        osc2.start(now + 0.18)
+        osc2.stop(now + 0.3)
+      } catch (err) {
+        console.log('Erreur lecture double bip:', err)
+      }
+    }
   }
 
   function speak(text: string) {
@@ -192,7 +221,6 @@ export default function App() {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ exerciseDurations, perRepDurations }))
   }, [exerciseDurations, perRepDurations])
 
-  // TIMER FUNCTIONS
   useEffect(() => {
     if (isRunning) {
       timerRef.current = window.setInterval(() => setTimerSeconds(s => s - 1), 1000)
@@ -209,9 +237,13 @@ export default function App() {
     if (isRunning) {
       if (isRandomBeepMode.current) {
         if (timerSeconds > 5 && timerSeconds < (totalTaskDuration.current - 5)) {
-          if (Math.random() < 0.15) {
-            playSingleRandomBeep()
-            if ((navigator as any).vibrate) (navigator as any).vibrate(200)
+          // Vérifie qu'il y a un laps de temps d'au moins 10 secondes depuis le dernier bip
+          if (lastBeepTimerSeconds.current - timerSeconds >= 10) {
+            if (Math.random() < 0.30) {
+              playDoubleBeep()
+              if ((navigator as any).vibrate) (navigator as any).vibrate([150, 80, 150])
+              lastBeepTimerSeconds.current = timerSeconds
+            }
           }
         }
       }
@@ -220,10 +252,10 @@ export default function App() {
           currentPhase.current = 'rest'
           const rest = savedRest.current
           setTimerSeconds(rest)
-          speak('Récupération')
+          speak('Ralenti !')
           return
         }
-        terminateTimer('PRÊT POUR LE SUIVANT', 'Série terminée')
+        terminateTimer('PRÊT POUR LA SUITE !', 'Série terminée')
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -243,11 +275,11 @@ export default function App() {
     currentPhase.current = 'single'
     totalTaskDuration.current = duration
     isRandomBeepMode.current = randomBeepsActive
+    lastBeepTimerSeconds.current = duration // Permet au premier bip d'intervenir après au moins 10 secondes
     setTimerSeconds(duration)
     setIsRunning(true)
   }
 
-  // 🚦 Lance l'annonce MP3 "Watch the gate" puis démarre l'effort dès la fin du son
   function startDoubleTimer(effort: number, rest: number) {
     stopCurrentAudio()
     clearIntervalIfAny()
@@ -258,21 +290,17 @@ export default function App() {
     const audio = new Audio(SOUND_BMX_GATE)
     currentAudioRef.current = audio
 
-    // Dès que l'enregistrement audio "Watch the gate..." se termine, l'effort commence
     audio.onended = () => {
       setTimerSeconds(effort)
       setIsRunning(true)
     }
 
-    // Sécurité au cas où le fichier audio est manquant ou échoue
     audio.onerror = () => {
-      console.warn('Erreur de chargement audio, lancement direct du timer.')
       setTimerSeconds(effort)
       setIsRunning(true)
     }
 
-    audio.play().catch(err => {
-      console.log('Erreur de lecture audio:', err)
+    audio.play().catch(() => {
       setTimerSeconds(effort)
       setIsRunning(true)
     })
@@ -369,7 +397,7 @@ export default function App() {
                 </button>
               ))}
             </div>
-            <span className="preset-note">Sélection actuelle : {Math.max(1, Math.round(exerciseDuration / 60))} min</span>
+            <span className="preset-note">Choix actuel : {Math.max(1, Math.round(exerciseDuration / 60))} min</span>
           </label>
 
           <label>
@@ -386,15 +414,15 @@ export default function App() {
                 </button>
               ))}
             </div>
-            <span className="preset-note">Valeur actuelle : {perRep}s</span>
+            <span className="preset-note">Temps actuel : {perRep}s</span>
           </label>
 
           <button className="btn-reset-grid" type="button" onClick={() => resetGridSettings(id, type)}>
-            Réinitialiser
+            Remettre à zéro
           </button>
         </div>
         <div className="grid-summary">
-          <span>{formatTime(exerciseDuration)} d'exercice • accélération {perRep}s</span>
+          <span>{formatTime(exerciseDuration)} en tout • effort de {perRep}s</span>
           {exceedsMax && (
             <span className="warning">Affichage limité à {MAX_REPS} répétitions sur {rawReps} prévues.</span>
           )}
@@ -428,161 +456,203 @@ export default function App() {
   const getPhaseLabel = () => {
     if (!isRunning && timerSeconds === 0) return 'Prêt'
     if (!isRunning) return 'En pause'
-    if (currentPhase.current === 'effort') return '🔥 EFFORT'
-    if (currentPhase.current === 'rest') return '🧘 RÉCUPÉRATION'
+    if (currentPhase.current === 'effort') return '🔥 À FOND !'
+    if (currentPhase.current === 'rest') return '🧘 REPOS (Souffle)'
     return '⏱️ EN COURS'
   }
 
   return (
     <div>
       <div className="header">
-        <h1>⚙️ WARMUP 2.0 // PRO BMX</h1>
+        <h1>⚙️ WARMUP 2.0 // PRO BMX (SHEET VIEW)</h1>
         <div className="routine-selector">
           <button className={`tab-btn ${activeTab === 'classique' ? 'active' : ''}`} onClick={() => setActiveTab('classique')}>CLASS.</button>
           <button className={`tab-btn ${activeTab === 'routineA' ? 'active' : ''}`} onClick={() => setActiveTab('routineA')}>ROUT. A</button>
           <button className={`tab-btn ${activeTab === 'routineB' ? 'active' : ''}`} onClick={() => setActiveTab('routineB')}>ROUT. B</button>
           <button className={`tab-btn ${activeTab === 'routineC' ? 'active' : ''}`} onClick={() => setActiveTab('routineC')}>ROUT. C</button>
           <button className={`tab-btn ${activeTab === 'routineD' ? 'active' : ''}`} onClick={() => setActiveTab('routineD')}>ROUT. D</button>
+          <button className={`tab-btn ${activeTab === 'sheet' ? 'active' : ''}`} onClick={() => setActiveTab('sheet')}>📊 RECAp'</button>
         </div>
       </div>
 
       <div className="age-selector-container">
-        <label htmlFor="ageSelect">Pilote ciblé :</label>
+        <label htmlFor="ageSelect">Quel est ton âge ?</label>
         <select id="ageSelect" value={age} onChange={e => setAge(e.target.value)}>
           {['8','9','10','11','12','13','14','15','16','17','elite'].map(v => (
-            <option key={v} value={v}>{v === 'elite' ? 'Élite / Pro' : `${v} ans`}</option>
+            <option key={v} value={v}>{v === 'elite' ? 'Pro / Élite' : `${v} ans`}</option>
           ))}
         </select>
       </div>
 
       <div className="global-controls">
-        <button className="btn-reset-all" type="button" onClick={resetAllGridSettings}>Réinitialiser tous les réglages</button>
-        <span className="saved-note">Paramètres sauvegardés automatiquement</span>
+        <button className="btn-reset-all" type="button" onClick={resetAllGridSettings}>Remettre tous les réglages à zéro</button>
+        <span className="saved-note">Sauvegardé automatiquement sur ton appareil</span>
       </div>
 
+      {/* VUE TABLEUR / SHEET */}
+     {/*} <div id="sheet" style={{ display: activeTab === 'sheet' ? 'block' : 'none', overflowX: 'auto', marginBottom: '100px' }}>
+        <div className="card">
+          <div className="card-header">
+            <span className="card-title">📊 TABLEAU DE TOUTES LES SÉANCES (SHEET)</span>
+            <span className="badge-time">GLOBAL</span>
+          </div>
+          <div className="consignes">
+            <strong>Tableau récapitulatif pour le profil : {age === 'elite' ? 'Pro / Élite' : `${age} ans`}</strong>
+          </div>
+          <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '15px', textAlign: 'left', fontSize: '14px' }}>
+            <thead>
+              <tr style={{ borderBottom: '2px solid #ccc', background: '#f5f5f5' }}>
+                <th style={{ padding: '10px' }}>Routine</th>
+                <th style={{ padding: '10px' }}>Exercice</th>
+                <th style={{ padding: '10px' }}>Type</th>
+                <th style={{ padding: '10px' }}>Durée Totale</th>
+                <th style={{ padding: '10px' }}>Effort / Rép</th>
+                <th style={{ padding: '10px' }}>Nombre de fois</th>
+              </tr>
+            </thead>
+            <tbody>
+              {GRIDS.map(g => {
+                const metrics = getGridMetrics(g, DEFAULT_EXERCISE_DURATION[g.id] ?? 180)
+                return (
+                  <tr key={g.id} style={{ borderBottom: '1px solid #eee' }}>
+                    <td style={{ padding: '10px', fontWeight: 'bold' }}>{g.routine}</td>
+                    <td style={{ padding: '10px' }}>{g.name}</td>
+                    <td style={{ padding: '10px', textTransform: 'uppercase' }}>{g.type}</td>
+                    <td style={{ padding: '10px' }}>{formatTime(metrics.exerciseDuration)}</td>
+                    <td style={{ padding: '10px' }}>{metrics.perRep}s</td>
+                    <td style={{ padding: '10px' }}>{metrics.reps} fois ({g.prefix}1 à {g.prefix}{metrics.reps})</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+*/}
+      {/* VUE CLASSIQUE */}
       <div id="classique" style={{ display: activeTab === 'classique' ? 'block' : 'none' }}>
         <div className="card">
-          <div className="card-header"><span className="card-title">🟢 1. MONTÉE EN PRESSION CARDIO</span><span className="badge-time">⏱️ 3 MIN</span></div>
-          <div className="consignes"><strong>Objectif : Activer le système aérobie et lubrifier les genoux.</strong><ul><li>Pédalage fluide, haut du corps détendu, respiration ample.</li></ul></div>
-          <button className={`btn-check-list ${doneTasks['card-classique-1'] ? 'done' : ''}`} onClick={() => toggleTask('card-classique-1', 180, false)}><span>🚴 Pédalage souple continu</span> <span>{doneTasks['card-classique-1'] ? '☑' : '☐'}</span></button>
+          <div className="card-header"><span className="card-title">🟢 1. RÉVEIL DU CORPS</span><span className="badge-time">⏱️ 3 MIN</span></div>
+          <div className="consignes"><strong>Objectif : Réveiller tes jambes et ton cœur en douceur.</strong><ul><li>Pédale tranquillement, respire bien et détends tes bras.</li></ul></div>
+          <button className={`btn-check-list ${doneTasks['card-classique-1'] ? 'done' : ''}`} onClick={() => toggleTask('card-classique-1', 180, false)}><span>🚴 Pédalage facile et souple</span> <span>{doneTasks['card-classique-1'] ? '☑' : '☐'}</span></button>
         </div>
-
         <div className="card">
-          <div className="card-header"><span className="card-title">🔴 2. SIMULATIONS DE GRILLE (PRO START)</span><span className="badge-time">⏱️ {formatTime(exerciseDurations['grid-gate-classique'] ?? 240)}</span></div>
-          <div className="consignes"><strong>Objectif : Recrutement explosif instantané.</strong><ul><li>{getWorkoutConfig(age).gateDesc}</li></ul></div>
+          <div className="card-header"><span className="card-title">🔴 2. DÉPARTS SUR LA GRILLE</span><span className="badge-time">⏱️ {formatTime(exerciseDurations['grid-gate-classique'] ?? 240)}</span></div>
+          <div className="consignes"><strong>Objectif : Réagir au quart de tour et partir comme une fusée !</strong><ul><li>{getWorkoutConfig(age).gateDesc}</li></ul></div>
           {renderGrid('grid-gate-classique', 'gate', 4, 'G', 240)}
         </div>
-
         <div className="card">
-          <div className="card-header"><span className="card-title">🟠 3. SPRINTS DE FRÉQUENCE (CADENCE)</span><span className="badge-time">⏱️ {formatTime(exerciseDurations['grid-turbo-classique'] ?? 180)}</span></div>
-          <div className="consignes"><strong>Objectif : Vitesse maximale de rotation des jambes sans rebondir.</strong><ul><li>{getWorkoutConfig(age).sprintDesc}</li></ul></div>
+          <div className="card-header"><span className="card-title">🟠 3. SPRINTS DE VITESSE</span><span className="badge-time">⏱️ {formatTime(exerciseDurations['grid-turbo-classique'] ?? 180)}</span></div>
+          <div className="consignes"><strong>Objectif : Faire tourner tes jambes le plus vite possible.</strong><ul><li>{getWorkoutConfig(age).sprintDesc}</li></ul></div>
           {renderGrid('grid-turbo-classique', 'sprint', 4, 'V', 180)}
         </div>
-
         <div className="card">
           <div className="card-header"><span className="card-title">🔵 4. RETOUR AU CALME</span><span className="badge-time">⏱️ 2 MIN</span></div>
-          <button className={`btn-check-list ${doneTasks['card-classique-4'] ? 'done' : ''}`} onClick={() => toggleTask('card-classique-4', 120, false)}><span>🧘 Respiration & Décontraction</span> <span>{doneTasks['card-classique-4'] ? '☑' : '☐'}</span></button>
+          <button className={`btn-check-list ${doneTasks['card-classique-4'] ? 'done' : ''}`} onClick={() => toggleTask('card-classique-4', 120, false)}><span>🧘 On souffle, on détend ses bras et ses jambes</span> <span>{doneTasks['card-classique-4'] ? '☑' : '☐'}</span></button>
         </div>
       </div>
 
+      {/* VUE ROUTINE A */}
       <div id="routineA" style={{ display: activeTab === 'routineA' ? 'block' : 'none' }}>
         <div className="card">
-          <div className="card-header"><span className="card-title">🟣 1. MISE EN ROUTE PROGRESSIVE</span><span className="badge-time">⏱️ 3 MIN</span></div>
-          <div className="consignes"><strong>Objectif : Éveiller les muscles stabilisateurs du tronc.</strong><ul><li>Pédalage avec résistance modérée sur le rouleau.</li></ul></div>
-          <button className={`btn-check-list ${doneTasks['card-routineA-1'] ? 'done' : ''}`} onClick={() => toggleTask('card-routineA-1', 180, false)}><span>🚴 Pédalage résistance croissante</span> <span>{doneTasks['card-routineA-1'] ? '☑' : '☐'}</span></button>
+          <div className="card-header"><span className="card-title">🟣 1. MISE EN ROUTE</span><span className="badge-time">⏱️ 3 MIN</span></div>
+          <div className="consignes"><strong>Objectif : Faire chauffer doucement les muscles.</strong><ul><li>Pédale en faisant un petit effort régulier.</li></ul></div>
+          <button className={`btn-check-list ${doneTasks['card-routineA-1'] ? 'done' : ''}`} onClick={() => toggleTask('card-routineA-1', 180, false)}><span>🚴 Pédalage avec un peu de résistance</span> <span>{doneTasks['card-routineA-1'] ? '☑' : '☐'}</span></button>
         </div>
-
         <div className="card">
-          <div className="card-header"><span className="card-title">⚡ 2. BLOCS DE FORCE SOUS-MAXIMALE</span><span className="badge-time">⏱️ {formatTime(exerciseDurations['grid-force-routineA'] ?? 240)}</span></div>
-          <div className="consignes"><strong>Objectif : Engager les fibres musculaires profondes.</strong><ul><li>Rester bien assis, pousser lourd, garder les coudes écartés.</li></ul></div>
+          <div className="card-header"><span className="card-title">⚡ 2. EXERCICES DE FORCE</span><span className="badge-time">⏱️ {formatTime(exerciseDurations['grid-force-routineA'] ?? 240)}</span></div>
+          <div className="consignes"><strong>Objectif : Avoir des jambes de plus en plus fortes.</strong><ul><li>Reste bien assis sur ta selle et pousse fort sur les pédales en gardant tes coudes écartés.</li></ul></div>
           {renderGrid('grid-force-routineA', 'sprint', 4, 'F', 240)}
         </div>
-
         <div className="card">
-          <div className="card-header"><span className="card-title">🔥 3. RELANCES SORTIE DE VIRAGE</span><span className="badge-time">⏱️ {formatTime(exerciseDurations['grid-relance-routineA'] ?? 180)}</span></div>
-          <div className="consignes"><strong>Objectif : Capacité à ré-accélérer fort après un freinage.</strong><ul><li>{getWorkoutConfig(age).gateDesc}</li></ul></div>
+          <div className="card-header"><span className="card-title">🔥 3. RELANCES APRÈS LES VIRAGES</span><span className="badge-time">⏱️ {formatTime(exerciseDurations['grid-relance-routineA'] ?? 180)}</span></div>
+          <div className="consignes"><strong>Objectif : Ré-accélérer fort comme dans un vrai virage.</strong><ul><li>{getWorkoutConfig(age).gateDesc}</li></ul></div>
           {renderGrid('grid-relance-routineA', 'gate', 4, 'R', 180)}
         </div>
-
         <div className="card">
-          <div className="card-header"><span className="card-title">🟢 4. DÉCRASSAGE DOUX</span><span className="badge-time">⏱️ 2 MIN</span></div>
-          <button className={`btn-check-list ${doneTasks['card-routineA-4'] ? 'done' : ''}`} onClick={() => toggleTask('card-routineA-4', 120, false)}><span>🧘 Retour au calme</span> <span>{doneTasks['card-routineA-4'] ? '☑' : '☐'}</span></button>
+          <div className="card-header"><span className="card-title">🟢 4. RETOUR AU CALME</span><span className="badge-time">⏱️ 2 MIN</span></div>
+          <button className={`btn-check-list ${doneTasks['card-routineA-4'] ? 'done' : ''}`} onClick={() => toggleTask('card-routineA-4', 120, false)}><span>🧘 On roule tout doucement pour souffler</span> <span>{doneTasks['card-routineA-4'] ? '☑' : '☐'}</span></button>
         </div>
       </div>
 
+      {/* VUE ROUTINE B */}
       <div id="routineB" style={{ display: activeTab === 'routineB' ? 'block' : 'none' }}>
         <div className="card">
-          <div className="card-header"><span className="card-title">🟡 1. FLASH RÉACTIVITÉ (NEURO-TRAINING)</span><span className="badge-time">⏱️ 3 MIN</span></div>
-          <div className="consignes"><strong>Objectif : Vitesse de conduction nerveuse (cerveau-muscle).</strong><ul><li>Souple, fluide et ultra-léger (zéro résistance).</li></ul></div>
-          <button className={`btn-check-list ${doneTasks['card-routineB-1'] ? 'done' : ''}`} onClick={() => toggleTask('card-routineB-1', 180, true)}><span>🚴 Lancer le Réveil Nerveux (Bips Aléatoires)</span> <span>{doneTasks['card-routineB-1'] ? '☑' : '☐'}</span></button>
+          <div className="card-header"><span className="card-title">🟡 1. JEU DE RÉFLEXES (BIPS SURPRISES)</span><span className="badge-time">⏱️ 3 MIN</span></div>
+          <div className="consignes">
+            <strong>Objectif : Réveiller tes réflexes et ta vitesse de réaction.</strong>
+            <ul>
+              <li>Pédale léger et tends l'oreille. Des doubles bips surprises retentiront de temps en temps (avec au moins 10 secondes d'écart) : réagis instantanément par deux coup de pédale fulgurant dès que tu les entends !</li>
+            </ul>
+          </div>
+          <button className={`btn-check-list ${doneTasks['card-routineB-1'] ? 'done' : ''}`} onClick={() => toggleTask('card-routineB-1', 180, true)}><span>🚴 Lancer le jeu des bips surprises</span> <span>{doneTasks['card-routineB-1'] ? '☑' : '☐'}</span></button>
         </div>
-
         <div className="card">
-          <div className="card-header"><span className="card-title">⚡ 2. ENCHAÎNEMENT DE GRILLES COURTES</span><span className="badge-time">⏱️ 4 MIN</span></div>
-          <div className="consignes"><strong>Objectif : Vitesse de sortie de grille pure.</strong><ul><li>{getWorkoutConfig(age).gateDesc}</li></ul></div>
+          <div className="card-header"><span className="card-title">⚡ 2. ENCHAÎNEMENTS DE GRILLES</span><span className="badge-time">⏱️ 4 MIN</span></div>
+          <div className="consignes"><strong>Objectif : S'élancer super vite de la grille.</strong><ul><li>{getWorkoutConfig(age).gateDesc}</li></ul></div>
           {renderGrid('grid-gate-routineB', 'gate', 5, 'G', 240)}
         </div>
-
         <div className="card">
-          <div className="card-header"><span className="card-title">🚀 3. SPRINTS DE SECTION (PREMIÈRE LIGNE)</span><span className="badge-time">⏱️ 3 MIN</span></div>
-          <div className="consignes"><strong>Objectif : Maintenir la puissance sur les premiers mètres.</strong><ul><li>{getWorkoutConfig(age).sprintDesc}</li></ul></div>
+          <div className="card-header"><span className="card-title">🚀 3. SPRINTS DE SECTION</span><span className="badge-time">⏱️ 3 MIN</span></div>
+          <div className="consignes"><strong>Objectif : Garder de la vitesse sur la piste.</strong><ul><li>{getWorkoutConfig(age).sprintDesc}</li></ul></div>
           {renderGrid('grid-sprint-routineB', 'sprint', 3, 'A', 180)}
         </div>
       </div>
 
+      {/* VUE ROUTINE C */}
       <div id="routineC" style={{ display: activeTab === 'routineC' ? 'block' : 'none' }}>
         <div className="card">
-          <div className="card-header"><span className="card-title">🟢 1. ÉCHAUFFEMENT PROGRESSIF</span><span className="badge-time">⏱️ 3 MIN</span></div>
-          <div className="consignes"><strong>Objectif : Élever la température centrale.</strong><ul><li>Pédalage fluide.</li></ul></div>
-          <button className={`btn-check-list ${doneTasks['card-routineC-1'] ? 'done' : ''}`} onClick={() => toggleTask('card-routineC-1', 180, false)}><span>🚴 Cardio progressif</span> <span>{doneTasks['card-routineC-1'] ? '☑' : '☐'}</span></button>
+          <div className="card-header"><span className="card-title">🟢 1. ÉCHAUFFEMENT FACILE</span><span className="badge-time">⏱️ 3 MIN</span></div>
+          <div className="consignes"><strong>Objectif : Bien préparer ton corps.</strong><ul><li>Pédale tranquillement pour te mettre en route.</li></ul></div>
+          <button className={`btn-check-list ${doneTasks['card-routineC-1'] ? 'done' : ''}`} onClick={() => toggleTask('card-routineC-1', 180, false)}><span>🚴 Pédalage en douceur</span> <span>{doneTasks['card-routineC-1'] ? '☑' : '☐'}</span></button>
         </div>
-
         <div className="card">
-          <div className="card-header"><span className="card-title">🔥 2. SOUTIEN DE FIN DE PARCOURS</span><span className="badge-time">⏱️ 4 MIN</span></div>
-          <div className="consignes"><strong>Objectif : Encaisser l'acide lactique.</strong><ul><li>{getWorkoutConfig(age).sprintDesc}</li></ul></div>
+          <div className="card-header"><span className="card-title">🔥 2. TENIR JUSQU'À LA FIN</span><span className="badge-time">⏱️ 4 MIN</span></div>
+          <div className="consignes"><strong>Objectif : Ne rien lâcher même quand ça pique un peu dans les jambes.</strong><ul><li>{getWorkoutConfig(age).sprintDesc}</li></ul></div>
           {renderGrid('grid-long-routineC', 'sprint', 3, 'L', 240)}
         </div>
-
         <div className="card">
-          <div className="card-header"><span className="card-title">⚡ 3. RELANCES MULTIPLES</span><span className="badge-time">⏱️ 3 MIN</span></div>
-          <div className="consignes"><strong>Objectif : Enchaîner les efforts sous contrainte.</strong><ul><li>{getWorkoutConfig(age).gateDesc}</li></ul></div>
+          <div className="card-header"><span className="card-title">⚡ 3. MULTI-RELANCES</span><span className="badge-time">⏱️ 3 MIN</span></div>
+          <div className="consignes"><strong>Objectif : Enchaîner les efforts avec du punch.</strong><ul><li>{getWorkoutConfig(age).gateDesc}</li></ul></div>
           {renderGrid('grid-relance-routineC', 'gate', 4, 'RA', 180)}
         </div>
-
         <div className="card">
           <div className="card-header"><span className="card-title">🧘 4. RETOUR AU CALME PROFOND</span><span className="badge-time">⏱️ 2 MIN</span></div>
-          <button className={`btn-check-list ${doneTasks['card-routineC-4'] ? 'done' : ''}`} onClick={() => toggleTask('card-routineC-4', 120, false)}><span>🧘 Respiration ventouse</span> <span>{doneTasks['card-routineC-4'] ? '☑' : '☐'}</span></button>
+          <button className={`btn-check-list ${doneTasks['card-routineC-4'] ? 'done' : ''}`} onClick={() => toggleTask('card-routineC-4', 120, false)}><span>🧘 Respire profondément en gonflant bien ton ventre</span> <span>{doneTasks['card-routineC-4'] ? '☑' : '☐'}</span></button>
         </div>
       </div>
 
+      {/* VUE ROUTINE D */}
       <div id="routineD" style={{ display: activeTab === 'routineD' ? 'block' : 'none' }}>
         <div className="card">
-          <div className="card-header"><span className="card-title">🔵 1. SOUPLESSE DE PÉDALAGE</span><span className="badge-time">⏱️ 3 MIN</span></div>
-          <div className="consignes"><strong>Objectif : Fluidité du tour de pédale.</strong><ul><li>Pédaler très vite avec quasi zéro résistance.</li></ul></div>
-          <button className={`btn-check-list ${doneTasks['card-routineD-1'] ? 'done' : ''}`} onClick={() => toggleTask('card-routineD-1', 180, false)}><span>🚴 Vélocité pure à vide</span> <span>{doneTasks['card-routineD-1'] ? '☑' : '☐'}</span></button>
+          <div className="card-header"><span className="card-title">🔵 1. PÉDALAGE LÉGER</span><span className="badge-time">⏱️ 3 MIN</span></div>
+          <div className="consignes"><strong>Objectif : Faire tourner tes jambes à fond sans forcer.</strong><ul><li>Pédale le plus vite possible mais sans résistance.</li></ul></div>
+          <button className={`btn-check-list ${doneTasks['card-routineD-1'] ? 'done' : ''}`} onClick={() => toggleTask('card-routineD-1', 180, false)}><span>🚴 Vélocité maximale à vide</span> <span>{doneTasks['card-routineD-1'] ? '☑' : '☐'}</span></button>
         </div>
-
         <div className="card">
-          <div className="card-header"><span className="card-title">⚡ 2. SPRINTS DE FRÉQUENCE MAX</span><span className="badge-time">⏱️ 4 MIN</span></div>
-          <div className="consignes"><strong>Objectif : Vitesse maximale des pieds sur le rouleau.</strong><ul><li>{getWorkoutConfig(age).sprintDesc}</li></ul></div>
+          <div className="card-header"><span className="card-title">⚡ 2. VITESSE MAXIMUM DES JAMBES</span><span className="badge-time">⏱️ 4 MIN</span></div>
+          <div className="consignes"><strong>Objectif : Aller le plus vite possible sur tes pédales.</strong><ul><li>{getWorkoutConfig(age).sprintDesc}</li></ul></div>
           {renderGrid('grid-freq-routineD', 'sprint', 4, 'V', 240)}
         </div>
-
         <div className="card">
-          <div className="card-header"><span className="card-title">🚀 3. EXPLO-FLASH (RÉACTIVITÉ COURTE)</span><span className="badge-time">⏱️ 3 MIN</span></div>
-          <div className="consignes"><strong>Objectif : Gagner en punch sur le premier impact (bips aléatoires).</strong><ul><li>Réagir instantanément au signal sonore inopiné par un coup de pédale violent.</li></ul></div>
+          <div className="card-header"><span className="card-title">🚀 3. JEU DE RÉFLEXES (FLASH)</span><span className="badge-time">⏱️ 3 MIN</span></div>
+          <div className="consignes">
+            <strong>Objectif : Devenir un super-héros de la rapidité !</strong>
+            <ul>
+              <li>Pédale léger et tiens-toi prêt. Des doubles bips retentiront de façon aléatoire (avec au moins 10 secondes d'écart) pour déclencher un grand coup de pédale hyper rapide.</li>
+            </ul>
+          </div>
           {renderGrid('grid-flash-routineD', 'gate', 4, 'EF', 180)}
         </div>
-
         <div className="card">
-          <div className="card-header"><span className="card-title">🧘 4. DÉCRASSAGE FIN DE SÉANCE</span><span className="badge-time">⏱️ 2 MIN</span></div>
-          <button className={`btn-check-list ${doneTasks['card-routineD-4'] ? 'done' : ''}`} onClick={() => toggleTask('card-routineD-4', 120, false)}><span>🧘 Retour au calme</span> <span>{doneTasks['card-routineD-4'] ? '☑' : '☐'}</span></button>
+          <div className="card-header"><span className="card-title">🧘 4. FIN DE SÉANCE</span><span className="badge-time">⏱️ 2 MIN</span></div>
+          <button className={`btn-check-list ${doneTasks['card-routineD-4'] ? 'done' : ''}`} onClick={() => toggleTask('card-routineD-4', 120, false)}><span>🧘 On se détend, bravo, c'est terminé !</span> <span>{doneTasks['card-routineD-4'] ? '☑' : '☐'}</span></button>
         </div>
       </div>
 
       <div id="victoryCard" className={`victory-card ${checkVictoryFor(activeTab) ? 'show' : ''}`}>
         <h2 style={{ margin: '0 0 4px 0' }}>🏆 WARMUP VALIDÉ !</h2>
-        <p style={{ margin: 0, fontWeight: 'bold' }}>Super boulot, moteur activé pour la journée !</p>
+        <p style={{ margin: 0, fontWeight: 'bold' }}>Super boulot, tu es prêt à tout déchirer sur la piste !</p>
       </div>
 
       <div className="sticky-timer-bar" id="timerBar">
@@ -595,7 +665,7 @@ export default function App() {
         </div>
         <div className="timer-controls">
           <button className="timer-btn primary" onClick={toggleTimer}>
-            {isRunning ? '⏸ PAUSE' : '▶ DÉMARRER'}
+            {isRunning ? '⏸ PAUSE' : '▶ C’EST PARTI !'}
           </button>
           <button className="timer-btn secondary" onClick={resetTimer}>
             🔄 RESET
