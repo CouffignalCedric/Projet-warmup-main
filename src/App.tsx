@@ -478,6 +478,8 @@ export default function App() {
          <GridControls id="grid-sprint-routineB" type="sprint" base={3} prefix="A" defaultExerciseDuration={180} exerciseDurations={exerciseDurations} perRepDurations={perRepDurations} doneTasks={doneTasks} setExerciseDurations={setExerciseDurations} setPerRepDurations={setPerRepDurations} toggleRep={toggleRep} resetGridSettings={resetGridSettings} getWorkoutConfig={getWorkoutConfig} age={age} />
        </div>
        <div className="card">
+         <div className="card-header"><span className="card-title">🟢 4. RETOUR AU CALME</span><span className="badge-time">⏱️ 2 MIN</span></div>
+         <div className="consignes"><strong>Objectif : Revenir au calme et reprendre une respiration régulière.</strong><ul><li>On souffle et on détend tout le corps.</li></ul></div>
          <TaskCard id="card-routineB-4" title="🧘 On souffle et on détend tout le corps" badgeTime="⏱️ 2 MIN" done={!!doneTasks['card-routineB-4']} onToggle={() => toggleTask('card-routineB-4', 120, false)} />
        </div>
      </div>
@@ -489,12 +491,18 @@ export default function App() {
          <TaskCard id="card-routineC-1" title="🚴 Pédalage en douceur" badgeTime="⏱️ 3 MIN" done={!!doneTasks['card-routineC-1']} onToggle={() => toggleTask('card-routineC-1', 180, false)} />
        </div>
        <div className="card">
+         <div className="card-header"><span className="card-title">⚡ 2. TENIR JUSQU’À LA FIN</span><span className="badge-time">⏱️ {formatTime(exerciseDurations['grid-long-routineC'] ?? 240)}</span></div>
+         <div className="consignes"><strong>Objectif : Garder une bonne intensité jusqu’au bout de la série.</strong><ul><li>{getWorkoutConfig(age).sprintDesc}</li></ul></div>
          <GridControls id="grid-long-routineC" type="sprint" base={3} prefix="L" defaultExerciseDuration={240} exerciseDurations={exerciseDurations} perRepDurations={perRepDurations} doneTasks={doneTasks} setExerciseDurations={setExerciseDurations} setPerRepDurations={setPerRepDurations} toggleRep={toggleRep} resetGridSettings={resetGridSettings} getWorkoutConfig={getWorkoutConfig} age={age} />
        </div>
        <div className="card">
+         <div className="card-header"><span className="card-title">🔥 3. MULTI-RELANCES</span><span className="badge-time">⏱️ {formatTime(exerciseDurations['grid-relance-routineC'] ?? 180)}</span></div>
+         <div className="consignes"><strong>Objectif : Repartir avec énergie après chaque relance.</strong><ul><li>{getWorkoutConfig(age).gateDesc}</li></ul></div>
          <GridControls id="grid-relance-routineC" type="gate" base={4} prefix="RA" defaultExerciseDuration={180} exerciseDurations={exerciseDurations} perRepDurations={perRepDurations} doneTasks={doneTasks} setExerciseDurations={setExerciseDurations} setPerRepDurations={setPerRepDurations} toggleRep={toggleRep} resetGridSettings={resetGridSettings} getWorkoutConfig={getWorkoutConfig} age={age} />
        </div>
        <div className="card">
+         <div className="card-header"><span className="card-title">🟢 4. RETOUR AU CALME</span><span className="badge-time">⏱️ 2 MIN</span></div>
+         <div className="consignes"><strong>Objectif : Revenir doucement à un rythme maîtrisé.</strong><ul><li>Respire profondément en gonflant bien ton ventre.</li></ul></div>
          <TaskCard id="card-routineC-4" title="🧘 Respire profondément en gonflant bien ton ventre" badgeTime="⏱️ 2 MIN" done={!!doneTasks['card-routineC-4']} onToggle={() => toggleTask('card-routineC-4', 120, false)} />
        </div>
      </div>
@@ -516,6 +524,8 @@ export default function App() {
          <GridControls id="grid-flash-routineD" type="gate" base={4} prefix="EF" defaultExerciseDuration={180} exerciseDurations={exerciseDurations} perRepDurations={perRepDurations} doneTasks={doneTasks} setExerciseDurations={setExerciseDurations} setPerRepDurations={setPerRepDurations} toggleRep={toggleRep} resetGridSettings={resetGridSettings} getWorkoutConfig={getWorkoutConfig} age={age} />
        </div>
        <div className="card">
+         <div className="card-header"><span className="card-title">🟢 4. RETOUR AU CALME</span><span className="badge-time">⏱️ 2 MIN</span></div>
+         <div className="consignes"><strong>Objectif : Clore la séance avec douceur.</strong><ul><li>On se détend, bravo, c'est terminé !</li></ul></div>
          <TaskCard id="card-routineD-4" title="🧘 On se détend, bravo, c'est terminé !" badgeTime="⏱️ 2 MIN" done={!!doneTasks['card-routineD-4']} onToggle={() => toggleTask('card-routineD-4', 120, false)} />
        </div>
      </div>
