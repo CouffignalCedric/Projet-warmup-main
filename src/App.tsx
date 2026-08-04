@@ -96,6 +96,9 @@ export default function App() {
   useEffect(() => {
     updateGrids()
     resetTimer()
+    const cfg = getWorkoutConfig(age)
+    const newPerRep = Object.fromEntries(GRIDS.map(g => [g.id, getDefaultRepDuration(g.type, cfg)]))
+    setPerRepDurations(newPerRep)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [age])
 
@@ -403,16 +406,20 @@ export default function App() {
           <label>
             Durée accélération :
             <div className="time-presets">
-              {[3, 4, 5].map(sec => (
-                <button
-                  key={sec}
-                  type="button"
-                  className={`preset-btn ${perRep === sec ? 'active' : ''}`}
-                  onClick={() => setPerRepDurations(p => ({ ...p, [id]: sec }))}
-                >
-                  {sec}s
-                </button>
-              ))}
+              {(() => {
+                const center = type === 'gate' ? cfg.gateEffort : cfg.sprintEffort
+                const opts = Array.from(new Set([Math.max(1, center - 1), center, center + 1]))
+                return opts.map(sec => (
+                  <button
+                    key={sec}
+                    type="button"
+                    className={`preset-btn ${perRep === sec ? 'active' : ''}`}
+                    onClick={() => setPerRepDurations(p => ({ ...p, [id]: sec }))}
+                  >
+                    {sec}s
+                  </button>
+                ))
+              })()}
             </div>
             <span className="preset-note">Temps actuel : {perRep}s</span>
           </label>
