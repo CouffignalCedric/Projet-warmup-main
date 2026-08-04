@@ -262,7 +262,11 @@ export default function App() {
           currentPhase.current = 'rest'
           const rest = savedRest.current
           setTimerSeconds(rest)
-          speak('Ralenti !')
+          window.setTimeout(() => {
+            if (currentPhase.current === 'rest') {
+              speak('Ralenti !')
+            }
+          }, 120)
           return
         }
         terminateTimer('PRÊT POUR LA SUITE !', 'Série terminée')
