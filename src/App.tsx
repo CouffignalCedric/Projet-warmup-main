@@ -99,6 +99,7 @@ export default function App() {
   const lastBeepTimerSeconds = useRef<number>(9999)
   const currentAudioRef = useRef<HTMLAudioElement | null>(null)
   const audioStartTimeoutRef = useRef<number | null>(null)
+  const currentRepRef = useRef<string | null>(null) // tracks the currently running rep id when using startDoubleTimer/toggleRep
 
   useEffect(() => {
     updateGrids()
@@ -183,8 +184,17 @@ export default function App() {
 
   function toggleRep(id: string, effort: number, rest: number) {
     unlockAudio()
+    const wasDone = !!doneTasks[id]
+    // toggle UI state
     setDoneTasks(prev => ({ ...prev, [id]: !prev[id] }))
-    if (!doneTasks[id]) startDoubleTimer(effort, rest)
+    if (!wasDone) {
+      // starting this rep: remember it and start timer
+      currentRepRef.current = id
+      startDoubleTimer(effort, rest)
+    } else {
+      // user toggled off — if it's the current rep, clear
+      if (currentRepRef.current === id) currentRepRef.current = null
+    }
   }
 
   function toggleTask(id: string, duration: number, randomBeeps: boolean) {
@@ -269,7 +279,35 @@ export default function App() {
           }, 120)
           return
         }
-        terminateTimer('PRÊT POUR LA SUITE !', 'Série terminée')
+        // If we're in rest phase and timer expired, try to auto-advance to next rep in the same grid
+        if (currentPhase.current === 'rest') {
+          const curr = currentRepRef.current
+          if (curr) {
+            const m = curr.match(/(.+)-(\d+)$/)
+            if (m) {
+              const baseId = m[1]
+              const idx = parseInt(m[2], 10)
+              const nextId = `${baseId}-${idx + 1}`
+              // check if next exists and is not done
+              if (nextId in doneTasks && !doneTasks[nextId]) {
+                // prepare cfg and durations
+                const g = GRIDS.find(x => x.id === baseId)
+                const cfg = getWorkoutConfig(age)
+                const perRep = perRepDurations[baseId] ?? (g ? getDefaultRepDuration(g.type, cfg) : 180)
+                const rest = g ? (g.type === 'gate' ? cfg.gateRest : cfg.sprintRest) : 35
+                // mark next as started
+                setDoneTasks(prev => ({ ...prev, [nextId]: true }))
+                currentRepRef.current = nextId
+                // start next rep
+                startDoubleTimer(perRep, rest)
+                return
+              }
+            }
+          }
+        }
+        // No next rep — end of series
+        currentRepRef.current = null
+        terminateTimer('PRÊT POUR LA SUITE !', 'Exercice terminé')
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
