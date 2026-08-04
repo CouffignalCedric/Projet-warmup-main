@@ -4,11 +4,40 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Warmup Training</title>
-    
-    <link rel="icon" type="image/svg+xml" href="/public/icone_roue.svg" />
+    <meta name="description" content="Warmup Training — interactive workout warmup routines and guided sessions." />
+    <meta name="theme-color" content="#0a84ff" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" type="image/svg+xml" href="/icone_roue.svg" />
+    <link rel="apple-touch-icon" href="/icone_roue.svg" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <style>
+      /* Splash screen styles */
+      #splash { position: fixed; inset:0; display:flex; align-items:center; justify-content:center; flex-direction:column; background:#0a84ff; color:#fff; z-index:9999; transition: opacity .4s ease; }
+      #splash.hidden { opacity:0; pointer-events:none; }
+      #splash img{ width:96px; height:96px; margin-bottom:16px; }
+      #splash h1{ font-family:system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial; font-size:20px; margin:0; font-weight:600; }
+    </style>
   </head>
   <body>
+    <div id="splash" aria-hidden="true">
+      <img src="/splash.svg" alt="Warmup logo" />
+      <h1>Warmup</h1>
+    </div>
     <div id="root"></div>
+    <script>
+      // Fade out and remove the splash once the page and assets are loaded.
+      (function(){
+        function hideSplash(){
+          var s = document.getElementById('splash');
+          if(!s) return;
+          s.classList.add('hidden');
+          setTimeout(function(){ s.parentNode && s.parentNode.removeChild(s); }, 500);
+        }
+        if (document.readyState === 'complete') { hideSplash(); }
+        else { window.addEventListener('load', hideSplash); setTimeout(hideSplash, 3000); }
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
