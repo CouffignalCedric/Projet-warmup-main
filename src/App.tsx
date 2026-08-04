@@ -90,6 +90,7 @@ export default function App() {
 
   const [timerSeconds, setTimerSeconds] = useState<number>(0)
   const [isRunning, setIsRunning] = useState(false)
+  const [isAudioPending, setIsAudioPending] = useState(false)
   const timerRef = useRef<number | null>(null)
   const currentPhase = useRef<'idle' | 'effort' | 'rest' | 'single'>('idle')
   const savedRest = useRef<number>(35)
@@ -275,6 +276,7 @@ export default function App() {
       currentAudioRef.current.currentTime = 0
       currentAudioRef.current = null
     }
+    setIsAudioPending(false)
   }
 
   function startSingleTimer(duration: number, randomBeepsActive: boolean) {
@@ -294,21 +296,25 @@ export default function App() {
     isRandomBeepMode.current = false
     savedRest.current = rest
     currentPhase.current = 'effort'
-
+    setIsAudioPending(true)
+    
     const audio = new Audio(SOUND_BMX_GATE)
     currentAudioRef.current = audio
-
+    
     audio.onended = () => {
+      setIsAudioPending(false)
       setTimerSeconds(effort)
       setIsRunning(true)
     }
-
+    
     audio.onerror = () => {
+      setIsAudioPending(false)
       setTimerSeconds(effort)
       setIsRunning(true)
     }
-
+    
     audio.play().catch(() => {
+      setIsAudioPending(false)
       setTimerSeconds(effort)
       setIsRunning(true)
     })
@@ -535,7 +541,7 @@ export default function App() {
        <p style={{ margin: 0, fontWeight: 'bold' }}>Super boulot, tu es prêt à tout déchirer sur la piste !</p>
      </div>
 
-     <TimerBar timerSeconds={timerSeconds} isRunning={isRunning} toggleTimer={toggleTimer} resetTimer={resetTimer} getPhaseLabel={getPhaseLabel} />
+     <TimerBar timerSeconds={timerSeconds} isRunning={isRunning} isAudioPending={isAudioPending} toggleTimer={toggleTimer} resetTimer={resetTimer} getPhaseLabel={getPhaseLabel} />
    </div>
  )
 }
