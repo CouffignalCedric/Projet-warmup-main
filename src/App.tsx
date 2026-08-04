@@ -100,6 +100,9 @@ export default function App() {
   const currentAudioRef = useRef<HTMLAudioElement | null>(null)
   const audioStartTimeoutRef = useRef<number | null>(null)
   const currentRepRef = useRef<string | null>(null) // tracks the currently running rep id when using startDoubleTimer/toggleRep
+  const totalRepsRef = useRef<number | null>(null) // total reps for the current grid when running a series
+  const effortRef = useRef<number | null>(null) // effort seconds per rep for the running series
+  const currentGridIdRef = useRef<string | null>(null) // base grid id (without -N) for the running series
 
   useEffect(() => {
     updateGrids()
@@ -188,12 +191,39 @@ export default function App() {
     // toggle UI state
     setDoneTasks(prev => ({ ...prev, [id]: !prev[id] }))
     if (!wasDone) {
-      // starting this rep: remember it and start timer
-      currentRepRef.current = id
-      startDoubleTimer(effort, rest)
+      // starting this rep: compute grid metrics and start the whole series automatically
+      const m = id.match(/(.+)-(\d+)$/)
+      if (m) {
+        const baseId = m[1]
+        const idx = parseInt(m[2], 10)
+        const g = GRIDS.find(x => x.id === baseId)
+        const metrics = g ? getGridMetrics(g, DEFAULT_EXERCISE_DURATION[baseId] ?? 180) : { perRep: effort, reps: 1 }
+        totalRepsRef.current = metrics.reps
+        effortRef.current = metrics.perRep
+        currentGridIdRef.current = baseId
+        // remember current rep id
+        currentRepRef.current = id
+        // mark this rep as started/done
+        setDoneTasks(prev => ({ ...prev, [id]: true }))
+        // start series: play gate audio then run effort/rest cycles for metrics.reps
+        startDoubleTimer(metrics.perRep, rest, metrics.reps)
+      } else {
+        // fallback — behave as before for unexpected id formats
+        currentRepRef.current = id
+        effortRef.current = effort
+        totalRepsRef.current = 1
+        currentGridIdRef.current = null
+        setDoneTasks(prev => ({ ...prev, [id]: true }))
+        startDoubleTimer(effort, rest, 1)
+      }
     } else {
-      // user toggled off — if it's the current rep, clear
-      if (currentRepRef.current === id) currentRepRef.current = null
+      // user toggled off — if it's the current rep, clear refs
+      if (currentRepRef.current === id) {
+        currentRepRef.current = null
+        totalRepsRef.current = null
+        effortRef.current = null
+        currentGridIdRef.current = null
+      }
     }
   }
 
@@ -279,35 +309,37 @@ export default function App() {
           }, 120)
           return
         }
-        // If we're in rest phase and timer expired, try to auto-advance to next rep in the same grid
+        // If we're in rest phase and timer expired, advance using series refs
         if (currentPhase.current === 'rest') {
           const curr = currentRepRef.current
-          if (curr) {
+          const total = totalRepsRef.current
+          const effort = effortRef.current
+          const baseId = currentGridIdRef.current
+          if (curr && total && effort && baseId) {
             const m = curr.match(/(.+)-(\d+)$/)
             if (m) {
-              const baseId = m[1]
-              const idx = parseInt(m[2], 10)
-              const nextId = `${baseId}-${idx + 1}`
-              // check if next exists and is not done
-              if (nextId in doneTasks && !doneTasks[nextId]) {
-                // prepare cfg and durations
-                const g = GRIDS.find(x => x.id === baseId)
-                const cfg = getWorkoutConfig(age)
-                const perRep = perRepDurations[baseId] ?? (g ? getDefaultRepDuration(g.type, cfg) : 180)
-                const rest = g ? (g.type === 'gate' ? cfg.gateRest : cfg.sprintRest) : 35
-                // mark next as started
+              let idx = parseInt(m[2], 10)
+              if (idx < total) {
+                // advance to next rep
+                idx += 1
+                const nextId = `${baseId}-${idx}`
                 setDoneTasks(prev => ({ ...prev, [nextId]: true }))
                 currentRepRef.current = nextId
-                // start next rep
-                startDoubleTimer(perRep, rest)
+                // launch gate audio and start the next effort
+                launchGateAudioAndEffort()
                 return
               }
             }
           }
+          // No more reps — finish series
+          currentRepRef.current = null
+          totalRepsRef.current = null
+          effortRef.current = null
+          currentGridIdRef.current = null
+          speak('Exercice terminé')
+          terminateTimer('PRÊT POUR LA SUITE !', 'Exercice terminé')
+          return
         }
-        // No next rep — end of series
-        currentRepRef.current = null
-        terminateTimer('PRÊT POUR LA SUITE !', 'Exercice terminé')
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -341,13 +373,17 @@ export default function App() {
     setIsRunning(true)
   }
 
-  function startDoubleTimer(effort: number, rest: number) {
+  function startDoubleTimer(effort: number, rest: number, totalReps?: number) {
     stopCurrentAudio()
     clearIntervalIfAny()
     isRandomBeepMode.current = false
     savedRest.current = rest
     currentPhase.current = 'effort'
     setIsAudioPending(true)
+
+    // store series info if provided
+    if (typeof totalReps === 'number') totalRepsRef.current = totalReps
+    effortRef.current = effort
 
     const audio = new Audio(SOUND_BMX_GATE)
     currentAudioRef.current = audio
@@ -401,6 +437,13 @@ export default function App() {
     if (audio.duration && Number.isFinite(audio.duration)) {
       scheduleTimerStart()
     }
+  }
+
+  // Helper to launch gate audio and start the effort for the next rep using stored refs
+  function launchGateAudioAndEffort() {
+    const eff = effortRef.current ?? 0
+    const total = totalRepsRef.current ?? undefined
+    startDoubleTimer(eff, savedRest.current, total)
   }
 
   function clearIntervalIfAny() {
