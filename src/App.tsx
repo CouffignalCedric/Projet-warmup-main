@@ -98,6 +98,7 @@ export default function App() {
   const isRandomBeepMode = useRef<boolean>(false)
   const lastBeepTimerSeconds = useRef<number>(9999)
   const currentAudioRef = useRef<HTMLAudioElement | null>(null)
+  const audioStartTimeoutRef = useRef<number | null>(null)
 
   useEffect(() => {
     updateGrids()
@@ -270,12 +271,20 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [timerSeconds])
 
+  function clearAudioStartTimeout() {
+    if (audioStartTimeoutRef.current !== null) {
+      window.clearTimeout(audioStartTimeoutRef.current)
+      audioStartTimeoutRef.current = null
+    }
+  }
+
   function stopCurrentAudio() {
     if (currentAudioRef.current) {
       currentAudioRef.current.pause()
       currentAudioRef.current.currentTime = 0
       currentAudioRef.current = null
     }
+    clearAudioStartTimeout()
     setIsAudioPending(false)
   }
 
@@ -297,27 +306,59 @@ export default function App() {
     savedRest.current = rest
     currentPhase.current = 'effort'
     setIsAudioPending(true)
-    
+
     const audio = new Audio(SOUND_BMX_GATE)
     currentAudioRef.current = audio
-    
+
+    const startTimer = () => {
+      clearAudioStartTimeout()
+      setIsAudioPending(false)
+      setTimerSeconds(effort)
+      setIsRunning(true)
+    }
+
+    const scheduleTimerStart = () => {
+      if (!audio.duration || !Number.isFinite(audio.duration)) return
+      const delayMs = Math.max(0, (audio.duration - 1.5) * 1000)
+      clearAudioStartTimeout()
+      audioStartTimeoutRef.current = window.setTimeout(() => {
+        audioStartTimeoutRef.current = null
+        if (currentAudioRef.current === audio) {
+          startTimer()
+        }
+      }, delayMs)
+    }
+
+    audio.addEventListener('loadedmetadata', scheduleTimerStart, { once: true })
+    audio.addEventListener('canplaythrough', scheduleTimerStart, { once: true })
+
     audio.onended = () => {
+      clearAudioStartTimeout()
+      if (currentAudioRef.current !== audio) return
       setIsAudioPending(false)
       setTimerSeconds(effort)
       setIsRunning(true)
     }
-    
+
     audio.onerror = () => {
+      clearAudioStartTimeout()
+      if (currentAudioRef.current !== audio) return
       setIsAudioPending(false)
       setTimerSeconds(effort)
       setIsRunning(true)
     }
-    
+
     audio.play().catch(() => {
+      clearAudioStartTimeout()
+      if (currentAudioRef.current !== audio) return
       setIsAudioPending(false)
       setTimerSeconds(effort)
       setIsRunning(true)
     })
+
+    if (audio.duration && Number.isFinite(audio.duration)) {
+      scheduleTimerStart()
+    }
   }
 
   function clearIntervalIfAny() {
