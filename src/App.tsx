@@ -86,6 +86,20 @@ export default function App() {
   const [overlayType, setOverlayType] = useState<OverlayType>(null)
   const overlayTimerRef = useRef<number | null>(null)
 
+  // Préchargement des images au montage du composant
+  useEffect(() => {
+    const images = [
+      '/start.webp',
+      '/ralenti.webp',
+      '/end.webp'
+    ]
+
+    images.forEach(src => {
+      const img = new Image()
+      img.src = src
+    })
+  }, [])
+
   const formatTime = (seconds: number) => {
     const minutes = Math.floor(seconds / 60)
     const secs = seconds % 60
@@ -488,7 +502,7 @@ export default function App() {
                 <h1 className="bmx-overlay-title">🚀 GO GO GO !</h1>
                 <div className="bmx-overlay-img-wrapper">
                   <img
-                    src="/start.png"
+                    src="/start.webp"
                     alt="BMX Départ Explosif"
                     className="bmx-overlay-image"
                   />
@@ -500,7 +514,7 @@ export default function App() {
                 <h1 className="bmx-overlay-title">😎 RALENTI !</h1>
                 <div className="bmx-overlay-img-wrapper">
                   <img
-                    src="/ralenti.png"
+                    src="/ralenti.webp"
                     alt="BMX Récupération"
                     className="bmx-overlay-image"
                   />
@@ -512,7 +526,7 @@ export default function App() {
                 <h1 className="bmx-overlay-title">🏆 EXERCICE TERMINÉ !</h1>
                 <div className="bmx-overlay-img-wrapper">
                   <img
-                    src="/end.png"
+                    src="/end.webp"
                     alt="Podium BMX Trophée"
                     className="bmx-overlay-image"
                   />
@@ -639,30 +653,21 @@ export default function App() {
           <TaskCard id="card-routineD-1" title="🚴 Vélocité maximale à vide" badgeTime="⏱️ 3 MIN" done={!!doneTasks['card-routineD-1']} onToggle={() => toggleTask('card-routineD-1', 180, false)} />
         </div>
         <div className="card">
-          <div className="card-header"><span className="card-title">⚡ 2. VITESSE MAXIMUM DES JAMBES</span><span className="badge-time">⏱️ 4 MIN</span></div>
-          <div className="consignes"><strong>Objectif : Aller le plus vite possible sur tes pédales.</strong><ul><li>{getWorkoutConfig(age).sprintDesc}</li></ul></div>
+          <div className="card-header"><span className="card-title">⚡ 2. VITESSE MAXIMUM DES JAMBES</span><span className="badge-time">⏱️ {formatTime(exerciseDurations['grid-freq-routineD'] ?? 240)}</span></div>
+          <div className="consignes"><strong>Objectif : Pédaler à la cadence maximale.</strong><ul><li>{getWorkoutConfig(age).sprintDesc}</li></ul></div>
           <GridControls id="grid-freq-routineD" type="sprint" base={4} prefix="V" defaultExerciseDuration={240} exerciseDurations={exerciseDurations} perRepDurations={perRepDurations} doneTasks={doneTasks} setExerciseDurations={setExerciseDurations} setPerRepDurations={setPerRepDurations} toggleRep={toggleRep} resetGridSettings={resetGridSettings} getWorkoutConfig={getWorkoutConfig} age={age} />
         </div>
         <div className="card">
-          <div className="card-header"><span className="card-title">⚡ 3. JEUX DE RÉFLEXES (FLASH)</span><span className="badge-time">⏱️ {formatTime(exerciseDurations['grid-flash-routineD'] ?? 180)}</span></div>
-          <div className="consignes"><strong>Objectif : Réagir instantanément au signal.</strong><ul><li>{getWorkoutConfig(age).gateDesc}</li></ul></div>
+          <div className="card-header"><span className="card-title">🔥 3. JEU DE RÉFLEXES (FLASH)</span><span className="badge-time">⏱️ {formatTime(exerciseDurations['grid-flash-routineD'] ?? 180)}</span></div>
+          <div className="consignes"><strong>Objectif : Sortir de la grille au signal sans hésiter.</strong><ul><li>{getWorkoutConfig(age).gateDesc}</li></ul></div>
           <GridControls id="grid-flash-routineD" type="gate" base={4} prefix="EF" defaultExerciseDuration={180} exerciseDurations={exerciseDurations} perRepDurations={perRepDurations} doneTasks={doneTasks} setExerciseDurations={setExerciseDurations} setPerRepDurations={setPerRepDurations} toggleRep={toggleRep} resetGridSettings={resetGridSettings} getWorkoutConfig={getWorkoutConfig} age={age} />
         </div>
         <div className="card">
           <div className="card-header"><span className="card-title">🟢 4. RETOUR AU CALME</span><span className="badge-time">⏱️ 2 MIN</span></div>
-          <div className="consignes"><strong>Objectif : Finir l'entraînement en souplesse.</strong><ul><li>Pédale tranquillement pour faire redescendre le cardio.</li></ul></div>
-          <TaskCard id="card-routineD-4" title="🧘 Pédalage de récupération finale" badgeTime="⏱️ 2 MIN" done={!!doneTasks['card-routineD-4']} onToggle={() => toggleTask('card-routineD-4', 120, false)} />
+          <div className="consignes"><strong>Objectif : Retrouver un calme olympien.</strong><ul><li>Pédale très lentement et bois un peu d'eau si besoin.</li></ul></div>
+          <TaskCard id="card-routineD-4" title="🧘 Pédale très lentement pour finir" badgeTime="⏱️ 2 MIN" done={!!doneTasks['card-routineD-4']} onToggle={() => toggleTask('card-routineD-4', 120, false)} />
         </div>
       </div>
-
-      <TimerBar
-        timerSeconds={timerSeconds}
-        isRunning={isRunning}
-        isAudioPending={isAudioPending}
-        getPhaseLabel={getPhaseLabel}
-        toggleTimer={toggleTimer}
-        resetTimer={resetTimer}
-      />
     </div>
   )
 }
