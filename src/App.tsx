@@ -1,13 +1,14 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import Header from './components/Header'
 import AgeSelector from './components/AgeSelector'
 import TimerBar from './components/TimerBar'
 import GridControls from './components/GridControls'
 import TaskCard from './components/TaskCard'
 
-const SOUND_BMX_GATE = '/watch_the_gate.mp3' 
+const SOUND_BMX_GATE = '/watch_the_gate.mp3'
 
 type GridDef = { id: string; type: 'gate' | 'sprint'; base: number; prefix: string; name: string; routine: string }
+type OverlayType = 'go' | 'rest' | 'finish' | null
 
 const GRIDS: GridDef[] = [
   { id: 'grid-gate-classique', type: 'gate', base: 4, prefix: 'G', name: 'Départs sur la grille', routine: 'Classique' },
@@ -47,7 +48,7 @@ function getWorkoutConfig(ageValue: string) {
       gateDesc: 'Pars comme un éclair dès que le signal retentit !',
       sprintDesc: 'Donne tout ce que tu as sur tes pédales sans rebondir sur la selle.'
     }
-  const age = parseInt(ageValue)
+  const age = parseInt(ageValue, 10)
   const gateEffort = Math.round(3 + ((age - 8) / 9) * 2)
   const sprintEffort = Math.round(6 + ((age - 8) / 9) * 5)
   const restTime = Math.round(30 + ((age - 8) / 9) * 20)
@@ -82,6 +83,9 @@ export default function App() {
   const [exerciseDurations, setExerciseDurations] = useState<Record<string, number>>(storedExerciseDurations)
   const [perRepDurations, setPerRepDurations] = useState<Record<string, number>>(storedPerRepDurations)
 
+  const [overlayType, setOverlayType] = useState<OverlayType>(null)
+  const overlayTimerRef = useRef<number | null>(null)
+
   const formatTime = (seconds: number) => {
     const minutes = Math.floor(seconds / 60)
     const secs = seconds % 60
@@ -99,10 +103,24 @@ export default function App() {
   const lastBeepTimerSeconds = useRef<number>(9999)
   const currentAudioRef = useRef<HTMLAudioElement | null>(null)
   const audioStartTimeoutRef = useRef<number | null>(null)
-  const currentRepRef = useRef<string | null>(null) // tracks the currently running rep id when using startDoubleTimer/toggleRep
-  const totalRepsRef = useRef<number | null>(null) // total reps for the current grid when running a series
-  const effortRef = useRef<number | null>(null) // effort seconds per rep for the running series
-  const currentGridIdRef = useRef<string | null>(null) // base grid id (without -N) for the running series
+  const hasTriggeredEffort = useRef<boolean>(false)
+
+  const currentRepRef = useRef<number>(1)
+  const totalRepsRef = useRef<number>(1)
+  const effortRef = useRef<number>(0)
+  const currentGridIdRef = useRef<string>('')
+
+  function triggerOverlay(type: OverlayType, durationMs: number) {
+    if (overlayTimerRef.current !== null) {
+      window.clearTimeout(overlayTimerRef.current)
+      overlayTimerRef.current = null
+    }
+    setOverlayType(type)
+    overlayTimerRef.current = window.setTimeout(() => {
+      setOverlayType(null)
+      overlayTimerRef.current = null
+    }, durationMs)
+  }
 
   useEffect(() => {
     updateGrids()
@@ -116,11 +134,43 @@ export default function App() {
   const audioCtxRef = useRef<AudioContext | null>(null)
   function unlockAudio() {
     if (!audioCtxRef.current) {
-      audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)()
+      audioCtxRef.current = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)()
     }
     if (audioCtxRef.current.state === 'suspended') {
       audioCtxRef.current.resume()
     }
+  }
+
+  function startDoubleTimer(effort: number, rest: number) {
+    clearIntervalIfAny()
+    effortRef.current = effort
+    savedRest.current = rest
+    launchGateAudioAndEffort()
+  }
+
+  function launchGateAudioAndEffort() {
+    stopCurrentAudio()
+    setIsAudioPending(true)
+    hasTriggeredEffort.current = false
+    const audio = new Audio(SOUND_BMX_GATE)
+    currentAudioRef.current = audio
+
+    // Affichage immédiat de l'image de départ dès le lancement de l'audio
+    triggerOverlay('go', 7000)
+
+    const handleStartEffort = () => {
+      if (hasTriggeredEffort.current) return
+      hasTriggeredEffort.current = true
+      stopCurrentAudio()
+      currentPhase.current = 'effort'
+      setTimerSeconds(effortRef.current)
+      setIsRunning(true)
+    }
+
+    audio.onended = handleStartEffort
+    audio.onerror = handleStartEffort
+
+    audio.play().catch(handleStartEffort)
   }
 
   function playDoubleBeep() {
@@ -187,44 +237,28 @@ export default function App() {
 
   function toggleRep(id: string, effort: number, rest: number) {
     unlockAudio()
-    const wasDone = !!doneTasks[id]
-    // toggle UI state
-    setDoneTasks(prev => ({ ...prev, [id]: !prev[id] }))
-    if (!wasDone) {
-      // starting this rep: compute grid metrics and start the whole series automatically
-      const m = id.match(/(.+)-(\d+)$/)
-      if (m) {
-        const baseId = m[1]
-        const idx = parseInt(m[2], 10)
-        const g = GRIDS.find(x => x.id === baseId)
-        const metrics = g ? getGridMetrics(g, DEFAULT_EXERCISE_DURATION[baseId] ?? 180) : { perRep: effort, reps: 1 }
-        totalRepsRef.current = metrics.reps
-        effortRef.current = metrics.perRep
-        currentGridIdRef.current = baseId
-        // remember current rep id
-        currentRepRef.current = id
-        // mark this rep as started/done
-        setDoneTasks(prev => ({ ...prev, [id]: true }))
-        // start series: play gate audio then run effort/rest cycles for metrics.reps
-        startDoubleTimer(metrics.perRep, rest, metrics.reps)
-      } else {
-        // fallback — behave as before for unexpected id formats
-        currentRepRef.current = id
-        effortRef.current = effort
-        totalRepsRef.current = 1
-        currentGridIdRef.current = null
-        setDoneTasks(prev => ({ ...prev, [id]: true }))
-        startDoubleTimer(effort, rest, 1)
-      }
-    } else {
-      // user toggled off — if it's the current rep, clear refs
-      if (currentRepRef.current === id) {
-        currentRepRef.current = null
-        totalRepsRef.current = null
-        effortRef.current = null
-        currentGridIdRef.current = null
-      }
-    }
+    resetTimer()
+
+    const gridId = id.replace(/-\d+$/, '')
+    const repMatch = id.match(/-(\d+)$/)
+    const startRep = repMatch ? parseInt(repMatch[1], 10) : 1
+
+    const grid = GRIDS.find(g => g.id === gridId)
+    const gridMetrics = grid
+      ? getGridMetrics(grid, DEFAULT_EXERCISE_DURATION[grid.id] ?? 180)
+      : { reps: 1 }
+
+    currentGridIdRef.current = gridId
+    currentRepRef.current = startRep
+    totalRepsRef.current = gridMetrics.reps
+    effortRef.current = effort
+
+    setDoneTasks(prev => ({
+      ...prev,
+      [id]: true
+    }))
+
+    startDoubleTimer(effortRef.current, rest)
   }
 
   function toggleTask(id: string, duration: number, randomBeeps: boolean) {
@@ -245,7 +279,7 @@ export default function App() {
 
   function getGridMetrics(grid: GridDef, defaultExerciseDuration: number) {
     const cfg = getWorkoutConfig(age)
-    const ageFactor = age === 'elite' ? 2 : (parseInt(age) >= 14 ? 1 : 0)
+    const ageFactor = age === 'elite' ? 2 : (parseInt(age, 10) >= 14 ? 1 : 0)
     const defaultEffort = grid.type === 'gate' ? cfg.gateEffort : cfg.sprintEffort
     const exerciseDuration = exerciseDurations[grid.id] ?? defaultExerciseDuration
     const perRep = perRepDurations[grid.id] ?? defaultEffort
@@ -258,11 +292,30 @@ export default function App() {
   }
 
   function resetAllGridSettings() {
+    resetTimer()
+    currentRepRef.current = 1
+    totalRepsRef.current = 1
+    effortRef.current = 0
+    currentGridIdRef.current = ''
     const cfg = getWorkoutConfig(age)
     const newExerciseDurations = Object.fromEntries(GRIDS.map(g => [g.id, DEFAULT_EXERCISE_DURATION[g.id] ?? 180]))
     const newPerRep = Object.fromEntries(GRIDS.map(g => [g.id, getDefaultRepDuration(g.type, cfg)]))
     setExerciseDurations(newExerciseDurations)
     setPerRepDurations(newPerRep)
+    const newDone: Record<string, boolean> = {}
+    GRIDS.forEach(g => {
+      const { reps } = getGridMetrics(g, DEFAULT_EXERCISE_DURATION[g.id] ?? 180)
+      for (let i = 1; i <= reps; i++) newDone[`${g.id}-${i}`] = false
+    })
+    const cardIds = [
+      'card-classique-1', 'card-classique-4',
+      'card-routineA-1', 'card-routineA-4',
+      'card-routineB-1', 'card-routineB-4',
+      'card-routineC-1', 'card-routineC-4',
+      'card-routineD-1', 'card-routineD-4'
+    ]
+    cardIds.forEach(id => { newDone[id] = false })
+    setDoneTasks(newDone)
     if (typeof window !== 'undefined') window.localStorage.removeItem(STORAGE_KEY)
   }
 
@@ -287,11 +340,12 @@ export default function App() {
     if (isRunning) {
       if (isRandomBeepMode.current) {
         if (timerSeconds > 5 && timerSeconds < (totalTaskDuration.current - 5)) {
-          // Vérifie qu'il y a un laps de temps d'au moins 10 secondes depuis le dernier bip
           if (lastBeepTimerSeconds.current - timerSeconds >= 10) {
             if (Math.random() < 0.30) {
               playDoubleBeep()
-              if ((navigator as any).vibrate) (navigator as any).vibrate([150, 80, 150])
+              if ((navigator as unknown as { vibrate?: (pattern: number | number[]) => boolean }).vibrate) {
+                (navigator as unknown as { vibrate: (pattern: number | number[]) => boolean }).vibrate([150, 80, 150])
+              }
               lastBeepTimerSeconds.current = timerSeconds
             }
           }
@@ -302,42 +356,25 @@ export default function App() {
           currentPhase.current = 'rest'
           const rest = savedRest.current
           setTimerSeconds(rest)
-          window.setTimeout(() => {
-            if (currentPhase.current === 'rest') {
-              speak('Ralenti !')
-            }
-          }, 120)
-          return
-        }
-        // If we're in rest phase and timer expired, advance using series refs
-        if (currentPhase.current === 'rest') {
-          const curr = currentRepRef.current
-          const total = totalRepsRef.current
-          const effort = effortRef.current
-          const baseId = currentGridIdRef.current
-          if (curr && total && effort && baseId) {
-            const m = curr.match(/(.+)-(\d+)$/)
-            if (m) {
-              let idx = parseInt(m[2], 10)
-              if (idx < total) {
-                // advance to next rep
-                idx += 1
-                const nextId = `${baseId}-${idx}`
-                setDoneTasks(prev => ({ ...prev, [nextId]: true }))
-                currentRepRef.current = nextId
-                // launch gate audio and start the next effort
-                launchGateAudioAndEffort()
-                return
-              }
-            }
+          speak('Ralenti !')
+          triggerOverlay('rest', 7000)
+        } else if (currentPhase.current === 'rest') {
+          clearIntervalIfAny()
+          setIsRunning(false)
+
+          if (currentRepRef.current < totalRepsRef.current) {
+            currentRepRef.current++
+            const nextId = `${currentGridIdRef.current}-${currentRepRef.current}`
+            setDoneTasks(prev => ({
+              ...prev,
+              [nextId]: true
+            }))
+            launchGateAudioAndEffort()
+            return
           }
-          // No more reps — finish series
-          currentRepRef.current = null
-          totalRepsRef.current = null
-          effortRef.current = null
-          currentGridIdRef.current = null
-          speak('Exercice terminé')
-          terminateTimer('PRÊT POUR LA SUITE !', 'Exercice terminé')
+
+          terminateTimer('EXERCICE TERMINÉ', 'Exercice terminé')
+          triggerOverlay('finish', 7000)
           return
         }
       }
@@ -368,82 +405,9 @@ export default function App() {
     currentPhase.current = 'single'
     totalTaskDuration.current = duration
     isRandomBeepMode.current = randomBeepsActive
-    lastBeepTimerSeconds.current = duration // Permet au premier bip d'intervenir après au moins 10 secondes
+    lastBeepTimerSeconds.current = duration
     setTimerSeconds(duration)
     setIsRunning(true)
-  }
-
-  function startDoubleTimer(effort: number, rest: number, totalReps?: number) {
-    stopCurrentAudio()
-    clearIntervalIfAny()
-    isRandomBeepMode.current = false
-    savedRest.current = rest
-    currentPhase.current = 'effort'
-    setIsAudioPending(true)
-
-    // store series info if provided
-    if (typeof totalReps === 'number') totalRepsRef.current = totalReps
-    effortRef.current = effort
-
-    const audio = new Audio(SOUND_BMX_GATE)
-    currentAudioRef.current = audio
-
-    const startTimer = () => {
-      clearAudioStartTimeout()
-      setIsAudioPending(false)
-      setTimerSeconds(effort)
-      setIsRunning(true)
-    }
-
-    const scheduleTimerStart = () => {
-      if (!audio.duration || !Number.isFinite(audio.duration)) return
-      const delayMs = Math.max(0, (audio.duration - 1.5) * 1000)
-      clearAudioStartTimeout()
-      audioStartTimeoutRef.current = window.setTimeout(() => {
-        audioStartTimeoutRef.current = null
-        if (currentAudioRef.current === audio) {
-          startTimer()
-        }
-      }, delayMs)
-    }
-
-    audio.addEventListener('loadedmetadata', scheduleTimerStart, { once: true })
-    audio.addEventListener('canplaythrough', scheduleTimerStart, { once: true })
-
-    audio.onended = () => {
-      clearAudioStartTimeout()
-      if (currentAudioRef.current !== audio) return
-      setIsAudioPending(false)
-      setTimerSeconds(effort)
-      setIsRunning(true)
-    }
-
-    audio.onerror = () => {
-      clearAudioStartTimeout()
-      if (currentAudioRef.current !== audio) return
-      setIsAudioPending(false)
-      setTimerSeconds(effort)
-      setIsRunning(true)
-    }
-
-    audio.play().catch(() => {
-      clearAudioStartTimeout()
-      if (currentAudioRef.current !== audio) return
-      setIsAudioPending(false)
-      setTimerSeconds(effort)
-      setIsRunning(true)
-    })
-
-    if (audio.duration && Number.isFinite(audio.duration)) {
-      scheduleTimerStart()
-    }
-  }
-
-  // Helper to launch gate audio and start the effort for the next rep using stored refs
-  function launchGateAudioAndEffort() {
-    const eff = effortRef.current ?? 0
-    const total = totalRepsRef.current ?? undefined
-    startDoubleTimer(eff, savedRest.current, total)
   }
 
   function clearIntervalIfAny() {
@@ -466,10 +430,19 @@ export default function App() {
   function resetTimer() {
     stopCurrentAudio()
     clearIntervalIfAny()
+    if (overlayTimerRef.current !== null) {
+      window.clearTimeout(overlayTimerRef.current)
+      overlayTimerRef.current = null
+    }
+    setOverlayType(null)
     setIsRunning(false)
     currentPhase.current = 'idle'
     isRandomBeepMode.current = false
     setTimerSeconds(0)
+    currentRepRef.current = 1
+    totalRepsRef.current = 1
+    effortRef.current = 0
+    currentGridIdRef.current = ''
   }
 
   function toggleTimer() {
@@ -488,36 +461,14 @@ export default function App() {
   }
 
   useEffect(() => {
-    const once = () => { 
-      try { unlockAudio() } catch {} 
+    const once = () => {
+      try { unlockAudio() } catch { }
       window.removeEventListener('click', once)
-      window.removeEventListener('touchstart', once) 
+      window.removeEventListener('touchstart', once)
     }
     window.addEventListener('click', once, { once: true })
     window.addEventListener('touchstart', once, { once: true })
   }, [])
-
-
-  function checkVictoryFor(tab: string) {
-    const PROGRAM_CARDS: Record<string, string[]> = {
-      classique: ['card-classique-1', 'card-classique-4'],
-      routineA: ['card-routineA-1', 'card-routineA-4'],
-      routineB: ['card-routineB-1', 'card-routineB-4'],
-      routineC: ['card-routineC-1', 'card-routineC-4'],
-      routineD: ['card-routineD-1', 'card-routineD-4']
-    }
-    const keys: string[] = []
-    if (PROGRAM_CARDS[tab]) keys.push(...PROGRAM_CARDS[tab])
-    GRIDS.forEach(g => {
-      const matches = g.id.includes(tab === 'classique' ? 'classique' : tab)
-      if (matches) {
-        const metrics = getGridMetrics(g, DEFAULT_EXERCISE_DURATION[g.id] ?? 180)
-        for (let i = 1; i <= metrics.reps; i++) keys.push(`${g.id}-${i}`)
-      }
-    })
-    if (keys.length === 0) return false
-    return keys.every(k => !!doneTasks[k])
-  }
 
   const getPhaseLabel = () => {
     if (!isRunning && timerSeconds === 0) return 'Prêt'
@@ -527,147 +478,191 @@ export default function App() {
     return '⏱️ EN COURS'
   }
 
- return (
-   <div>
-     <Header activeTab={activeTab} setActiveTab={setActiveTab} />
+  return (
+    <div>
+      {overlayType && (
+        <div className={`bmx-overlay-container ${overlayType ? 'active' : ''}`}>
+          <div className="bmx-overlay-content">
+            {overlayType === 'go' && (
+              <>
+                <h1 className="bmx-overlay-title">🚀 GO GO GO !</h1>
+                <div className="bmx-overlay-img-wrapper">
+                  <img
+                    src="/start.png"
+                    alt="BMX Départ Explosif"
+                    className="bmx-overlay-image"
+                  />
+                </div>
+              </>
+            )}
+            {overlayType === 'rest' && (
+              <>
+                <h1 className="bmx-overlay-title">😎 RALENTI !</h1>
+                <div className="bmx-overlay-img-wrapper">
+                  <img
+                    src="/ralenti.png"
+                    alt="BMX Récupération"
+                    className="bmx-overlay-image"
+                  />
+                </div>
+              </>
+            )}
+            {overlayType === 'finish' && (
+              <>
+                <h1 className="bmx-overlay-title">🏆 EXERCICE TERMINÉ !</h1>
+                <div className="bmx-overlay-img-wrapper">
+                  <img
+                    src="/end.png"
+                    alt="Podium BMX Trophée"
+                    className="bmx-overlay-image"
+                  />
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
-     <AgeSelector age={age} setAge={setAge} />
+      <Header activeTab={activeTab} setActiveTab={setActiveTab} />
 
-     <div className="global-controls">
-       <button className="btn-reset-all" type="button" onClick={resetAllGridSettings}>Remettre tous les réglages à zéro</button>
-       <span className="saved-note">Sauvegardé automatiquement sur ton appareil</span>
-     </div>
+      <AgeSelector age={age} setAge={setAge} />
 
-     {/* VUE CLASSIQUE */}
-     <div id="classique" style={{ display: activeTab === 'classique' ? 'block' : 'none' }}>
-       <div className="card">
-         <div className="card-header"><span className="card-title">🟢 1. RÉVEIL DU CORPS</span><span className="badge-time">⏱️ 3 MIN</span></div>
-         <div className="consignes"><strong>Objectif : Réveiller tes jambes et ton cœur en douceur.</strong><ul><li>Pédale tranquillement, respire bien et détends tes bras.</li></ul></div>
-         <TaskCard id="card-classique-1" title="🚴 Pédalage facile et souple" badgeTime="⏱️ 3 MIN" done={!!doneTasks['card-classique-1']} onToggle={() => toggleTask('card-classique-1', 180, false)}>
-           <span>{doneTasks['card-classique-1'] ? '☑' : '☐'}</span>
-         </TaskCard>
-       </div>
+      <div className="global-controls">
+        <button className="btn-reset-all" type="button" onClick={resetAllGridSettings}>Remettre tous les réglages à zéro</button>
+        <span className="saved-note">Sauvegardé automatiquement sur ton appareil</span>
+      </div>
 
-       <div className="card">
-         <div className="card-header"><span className="card-title">🔴 2. DÉPARTS SUR LA GRILLE</span><span className="badge-time">⏱️ {formatTime(exerciseDurations['grid-gate-classique'] ?? 240)}</span></div>
-         <div className="consignes"><strong>Objectif : Réagir au quart de tour et partir comme une fusée !</strong><ul><li>{getWorkoutConfig(age).gateDesc}</li></ul></div>
-         <GridControls id="grid-gate-classique" type="gate" base={4} prefix="G" defaultExerciseDuration={240} exerciseDurations={exerciseDurations} perRepDurations={perRepDurations} doneTasks={doneTasks} setExerciseDurations={setExerciseDurations} setPerRepDurations={setPerRepDurations} toggleRep={toggleRep} resetGridSettings={resetGridSettings} getWorkoutConfig={getWorkoutConfig} age={age} />
-       </div>
+      {/* VUE CLASSIQUE */}
+      <div id="classique" style={{ display: activeTab === 'classique' ? 'block' : 'none' }}>
+        <div className="card">
+          <div className="card-header"><span className="card-title">🟢 1. RÉVEIL DU CORPS</span><span className="badge-time">⏱️ 3 MIN</span></div>
+          <div className="consignes"><strong>Objectif : Réveiller tes jambes et ton cœur en douceur.</strong><ul><li>Pédale tranquillement, respire bien et détends tes bras.</li></ul></div>
+          <TaskCard id="card-classique-1" title="🚴 Pédalage facile et souple" badgeTime="⏱️ 3 MIN" done={!!doneTasks['card-classique-1']} onToggle={() => toggleTask('card-classique-1', 180, false)}>
+            <span>{doneTasks['card-classique-1'] ? '☑' : '☐'}</span>
+          </TaskCard>
+        </div>
 
-       <div className="card">
-         <div className="card-header"><span className="card-title">🟠 3. SPRINTS DE VITESSE</span><span className="badge-time">⏱️ {formatTime(exerciseDurations['grid-turbo-classique'] ?? 180)}</span></div>
-         <div className="consignes"><strong>Objectif : Faire tourner tes jambes le plus vite possible.</strong><ul><li>{getWorkoutConfig(age).sprintDesc}</li></ul></div>
-         <GridControls id="grid-turbo-classique" type="sprint" base={4} prefix="V" defaultExerciseDuration={180} exerciseDurations={exerciseDurations} perRepDurations={perRepDurations} doneTasks={doneTasks} setExerciseDurations={setExerciseDurations} setPerRepDurations={setPerRepDurations} toggleRep={toggleRep} resetGridSettings={resetGridSettings} getWorkoutConfig={getWorkoutConfig} age={age} />
-       </div>
+        <div className="card">
+          <div className="card-header"><span className="card-title">🔴 2. DÉPARTS SUR LA GRILLE</span><span className="badge-time">⏱️ {formatTime(exerciseDurations['grid-gate-classique'] ?? 240)}</span></div>
+          <div className="consignes"><strong>Objectif : Réagir au quart de tour et partir comme une fusée !</strong><ul><li>{getWorkoutConfig(age).gateDesc}</li></ul></div>
+          <GridControls id="grid-gate-classique" type="gate" base={4} prefix="G" defaultExerciseDuration={240} exerciseDurations={exerciseDurations} perRepDurations={perRepDurations} doneTasks={doneTasks} setExerciseDurations={setExerciseDurations} setPerRepDurations={setPerRepDurations} toggleRep={toggleRep} resetGridSettings={resetGridSettings} getWorkoutConfig={getWorkoutConfig} age={age} />
+        </div>
 
-       <div className="card">
-         <div className="card-header"><span className="card-title">🔵 4. RETOUR AU CALME</span><span className="badge-time">⏱️ 2 MIN</span></div>
-         <TaskCard id="card-classique-4" title="🧘 On souffle, on détend ses bras et ses jambes" badgeTime="⏱️ 2 MIN" done={!!doneTasks['card-classique-4']} onToggle={() => toggleTask('card-classique-4', 120, false)}>
-           <span>{doneTasks['card-classique-4'] ? '☑' : '☐'}</span>
-         </TaskCard>
-       </div>
-     </div>
+        <div className="card">
+          <div className="card-header"><span className="card-title">🟠 3. SPRINTS DE VITESSE</span><span className="badge-time">⏱️ {formatTime(exerciseDurations['grid-turbo-classique'] ?? 180)}</span></div>
+          <div className="consignes"><strong>Objectif : Faire tourner tes jambes le plus vite possible.</strong><ul><li>{getWorkoutConfig(age).sprintDesc}</li></ul></div>
+          <GridControls id="grid-turbo-classique" type="sprint" base={4} prefix="V" defaultExerciseDuration={180} exerciseDurations={exerciseDurations} perRepDurations={perRepDurations} doneTasks={doneTasks} setExerciseDurations={setExerciseDurations} setPerRepDurations={setPerRepDurations} toggleRep={toggleRep} resetGridSettings={resetGridSettings} getWorkoutConfig={getWorkoutConfig} age={age} />
+        </div>
 
-     {/* ROUTINES A, B, C, D — use components similarly */}
+        <div className="card">
+          <div className="card-header"><span className="card-title">🔵 4. RETOUR AU CALME</span><span className="badge-time">⏱️ 2 MIN</span></div>
+          <TaskCard id="card-classique-4" title="🧘 On souffle, on détend ses bras et ses jambes" badgeTime="⏱️ 2 MIN" done={!!doneTasks['card-classique-4']} onToggle={() => toggleTask('card-classique-4', 120, false)}>
+            <span>{doneTasks['card-classique-4'] ? '☑' : '☐'}</span>
+          </TaskCard>
+        </div>
+      </div>
 
-     <div id="routineA" style={{ display: activeTab === 'routineA' ? 'block' : 'none' }}>
-       <div className="card">
-         <div className="card-header"><span className="card-title">🟣 1. MISE EN ROUTE</span><span className="badge-time">⏱️ 3 MIN</span></div>
-         <div className="consignes"><strong>Objectif : Faire chauffer doucement les muscles.</strong><ul><li>Pédale en faisant un petit effort régulier.</li></ul></div>
-         <TaskCard id="card-routineA-1" title="🚴 Pédalage avec un peu de résistance" badgeTime="⏱️ 3 MIN" done={!!doneTasks['card-routineA-1']} onToggle={() => toggleTask('card-routineA-1', 180, false)} />
-       </div>
-       <div className="card">
-         <div className="card-header"><span className="card-title">⚡ 2. EXERCICES DE FORCE</span><span className="badge-time">⏱️ {formatTime(exerciseDurations['grid-force-routineA'] ?? 240)}</span></div>
-         <div className="consignes"><strong>Objectif : Avoir des jambes de plus en plus fortes.</strong><ul><li>Reste bien assis sur ta selle et pousse fort sur les pédales en gardant tes coudes écartés.</li></ul></div>
-         <GridControls id="grid-force-routineA" type="sprint" base={4} prefix="F" defaultExerciseDuration={240} exerciseDurations={exerciseDurations} perRepDurations={perRepDurations} doneTasks={doneTasks} setExerciseDurations={setExerciseDurations} setPerRepDurations={setPerRepDurations} toggleRep={toggleRep} resetGridSettings={resetGridSettings} getWorkoutConfig={getWorkoutConfig} age={age} />
-       </div>
-       <div className="card">
-         <div className="card-header"><span className="card-title">🔥 3. RELANCES APRÈS LES VIRAGES</span><span className="badge-time">⏱️ {formatTime(exerciseDurations['grid-relance-routineA'] ?? 180)}</span></div>
-         <div className="consignes"><strong>Objectif : Ré-accélérer fort comme dans un vrai virage.</strong><ul><li>{getWorkoutConfig(age).gateDesc}</li></ul></div>
-         <GridControls id="grid-relance-routineA" type="gate" base={4} prefix="R" defaultExerciseDuration={180} exerciseDurations={exerciseDurations} perRepDurations={perRepDurations} doneTasks={doneTasks} setExerciseDurations={setExerciseDurations} setPerRepDurations={setPerRepDurations} toggleRep={toggleRep} resetGridSettings={resetGridSettings} getWorkoutConfig={getWorkoutConfig} age={age} />
-       </div>
-       <div className="card">
-         <div className="card-header"><span className="card-title">🟢 4. RETOUR AU CALME</span><span className="badge-time">⏱️ 2 MIN</span></div>
-         <div className="consignes"><strong>Objectif : Récupérer et relâcher les muscles.</strong><ul><li>On roule tout doucement pour souffler</li></ul></div>
-         <TaskCard id="card-routineA-4" title="🧘 On roule tout doucement pour souffler" badgeTime="⏱️ 2 MIN" done={!!doneTasks['card-routineA-4']} onToggle={() => toggleTask('card-routineA-4', 120, false)} />
-       </div>
-     </div>
+      {/* ROUTINES A, B, C, D */}
+      <div id="routineA" style={{ display: activeTab === 'routineA' ? 'block' : 'none' }}>
+        <div className="card">
+          <div className="card-header"><span className="card-title">🟣 1. MISE EN ROUTE</span><span className="badge-time">⏱️ 3 MIN</span></div>
+          <div className="consignes"><strong>Objectif : Faire chauffer doucement les muscles.</strong><ul><li>Pédale en faisant un petit effort régulier.</li></ul></div>
+          <TaskCard id="card-routineA-1" title="🚴 Pédalage avec un peu de résistance" badgeTime="⏱️ 3 MIN" done={!!doneTasks['card-routineA-1']} onToggle={() => toggleTask('card-routineA-1', 180, false)} />
+        </div>
+        <div className="card">
+          <div className="card-header"><span className="card-title">⚡ 2. EXERCICES DE FORCE</span><span className="badge-time">⏱️ {formatTime(exerciseDurations['grid-force-routineA'] ?? 240)}</span></div>
+          <div className="consignes"><strong>Objectif : Avoir des jambes de plus en plus fortes.</strong><ul><li>Reste bien assis sur ta selle et pousse fort sur les pédales en gardant tes coudes écartés.</li></ul></div>
+          <GridControls id="grid-force-routineA" type="sprint" base={4} prefix="F" defaultExerciseDuration={240} exerciseDurations={exerciseDurations} perRepDurations={perRepDurations} doneTasks={doneTasks} setExerciseDurations={setExerciseDurations} setPerRepDurations={setPerRepDurations} toggleRep={toggleRep} resetGridSettings={resetGridSettings} getWorkoutConfig={getWorkoutConfig} age={age} />
+        </div>
+        <div className="card">
+          <div className="card-header"><span className="card-title">🔥 3. RELANCES APRÈS LES VIRAGES</span><span className="badge-time">⏱️ {formatTime(exerciseDurations['grid-relance-routineA'] ?? 180)}</span></div>
+          <div className="consignes"><strong>Objectif : Ré-accélérer fort comme dans un vrai virage.</strong><ul><li>{getWorkoutConfig(age).gateDesc}</li></ul></div>
+          <GridControls id="grid-relance-routineA" type="gate" base={4} prefix="R" defaultExerciseDuration={180} exerciseDurations={exerciseDurations} perRepDurations={perRepDurations} doneTasks={doneTasks} setExerciseDurations={setExerciseDurations} setPerRepDurations={setPerRepDurations} toggleRep={toggleRep} resetGridSettings={resetGridSettings} getWorkoutConfig={getWorkoutConfig} age={age} />
+        </div>
+        <div className="card">
+          <div className="card-header"><span className="card-title">🟢 4. RETOUR AU CALME</span><span className="badge-time">⏱️ 2 MIN</span></div>
+          <div className="consignes"><strong>Objectif : Récupérer et relâcher les muscles.</strong><ul><li>On roule tout doucement pour souffler</li></ul></div>
+          <TaskCard id="card-routineA-4" title="🧘 On roule tout doucement pour souffler" badgeTime="⏱️ 2 MIN" done={!!doneTasks['card-routineA-4']} onToggle={() => toggleTask('card-routineA-4', 120, false)} />
+        </div>
+      </div>
 
-     <div id="routineB" style={{ display: activeTab === 'routineB' ? 'block' : 'none' }}>
-       <div className="card">
-         <div className="card-header"><span className="card-title">🟡 1. JEU DE RÉFLEXES (BIPS SURPRISES)</span><span className="badge-time">⏱️ 3 MIN</span></div>
-         <div className="consignes"><strong>Objectif : Réveiller tes réflexes et ta vitesse de réaction.</strong><ul><li>Pédale léger et tends l'oreille. Des doubles bips surprises retentiront de temps en temps (avec au moins 10 secondes d'écart) : réagis instantanément par deux coup de pédale fulgurant dès que tu les entends !</li></ul></div>
-         <TaskCard id="card-routineB-1" title="🚴 Lancer le jeu des bips surprises" badgeTime="⏱️ 3 MIN" done={!!doneTasks['card-routineB-1']} onToggle={() => toggleTask('card-routineB-1', 180, true)} />
-       </div>
-       <div className="card">
-         <div className="card-header"><span className="card-title">⚡ 2. ENCHAÎNEMENTS DE GRILLES</span><span className="badge-time">⏱️ 4 MIN</span></div>
-         <div className="consignes"><strong>Objectif : S'élancer super vite de la grille.</strong><ul><li>{getWorkoutConfig(age).gateDesc}</li></ul></div>
-         <GridControls id="grid-gate-routineB" type="gate" base={5} prefix="G" defaultExerciseDuration={240} exerciseDurations={exerciseDurations} perRepDurations={perRepDurations} doneTasks={doneTasks} setExerciseDurations={setExerciseDurations} setPerRepDurations={setPerRepDurations} toggleRep={toggleRep} resetGridSettings={resetGridSettings} getWorkoutConfig={getWorkoutConfig} age={age} />
-       </div>
-       <div className="card">
-         <div className="card-header"><span className="card-title">🚀 3. SPRINTS DE SECTION</span><span className="badge-time">⏱️ 3 MIN</span></div>
-         <div className="consignes"><strong>Objectif : Garder de la vitesse sur la piste.</strong><ul><li>{getWorkoutConfig(age).sprintDesc}</li></ul></div>
-         <GridControls id="grid-sprint-routineB" type="sprint" base={3} prefix="A" defaultExerciseDuration={180} exerciseDurations={exerciseDurations} perRepDurations={perRepDurations} doneTasks={doneTasks} setExerciseDurations={setExerciseDurations} setPerRepDurations={setPerRepDurations} toggleRep={toggleRep} resetGridSettings={resetGridSettings} getWorkoutConfig={getWorkoutConfig} age={age} />
-       </div>
-       <div className="card">
-         <div className="card-header"><span className="card-title">🟢 4. RETOUR AU CALME</span><span className="badge-time">⏱️ 2 MIN</span></div>
-         <div className="consignes"><strong>Objectif : Revenir au calme et reprendre une respiration régulière.</strong><ul><li>On souffle et on détend tout le corps.</li></ul></div>
-         <TaskCard id="card-routineB-4" title="🧘 On souffle et on détend tout le corps" badgeTime="⏱️ 2 MIN" done={!!doneTasks['card-routineB-4']} onToggle={() => toggleTask('card-routineB-4', 120, false)} />
-       </div>
-     </div>
+      <div id="routineB" style={{ display: activeTab === 'routineB' ? 'block' : 'none' }}>
+        <div className="card">
+          <div className="card-header"><span className="card-title">🟡 1. JEU DE RÉFLEXES (BIPS SURPRISES)</span><span className="badge-time">⏱️ 3 MIN</span></div>
+          <div className="consignes"><strong>Objectif : Réveiller tes réflexes et ta vitesse de réaction.</strong><ul><li>Pédale léger et tends l'oreille. Des doubles bips surprises retentiront de temps en temps (avec au moins 10 secondes d'écart) : réagis instantanément par deux coup de pédale fulgurant dès que tu les entends !</li></ul></div>
+          <TaskCard id="card-routineB-1" title="🚴 Lancer le jeu des bips surprises" badgeTime="⏱️ 3 MIN" done={!!doneTasks['card-routineB-1']} onToggle={() => toggleTask('card-routineB-1', 180, true)} />
+        </div>
+        <div className="card">
+          <div className="card-header"><span className="card-title">⚡ 2. ENCHAÎNEMENTS DE GRILLES</span><span className="badge-time">⏱️ 4 MIN</span></div>
+          <div className="consignes"><strong>Objectif : S'élancer super vite de la grille.</strong><ul><li>{getWorkoutConfig(age).gateDesc}</li></ul></div>
+          <GridControls id="grid-gate-routineB" type="gate" base={5} prefix="G" defaultExerciseDuration={240} exerciseDurations={exerciseDurations} perRepDurations={perRepDurations} doneTasks={doneTasks} setExerciseDurations={setExerciseDurations} setPerRepDurations={setPerRepDurations} toggleRep={toggleRep} resetGridSettings={resetGridSettings} getWorkoutConfig={getWorkoutConfig} age={age} />
+        </div>
+        <div className="card">
+          <div className="card-header"><span className="card-title">🚀 3. SPRINTS DE SECTION</span><span className="badge-time">⏱️ 3 MIN</span></div>
+          <div className="consignes"><strong>Objectif : Garder de la vitesse sur la piste.</strong><ul><li>{getWorkoutConfig(age).sprintDesc}</li></ul></div>
+          <GridControls id="grid-sprint-routineB" type="sprint" base={3} prefix="A" defaultExerciseDuration={180} exerciseDurations={exerciseDurations} perRepDurations={perRepDurations} doneTasks={doneTasks} setExerciseDurations={setExerciseDurations} setPerRepDurations={setPerRepDurations} toggleRep={toggleRep} resetGridSettings={resetGridSettings} getWorkoutConfig={getWorkoutConfig} age={age} />
+        </div>
+        <div className="card">
+          <div className="card-header"><span className="card-title">🟢 4. RETOUR AU CALME</span><span className="badge-time">⏱️ 2 MIN</span></div>
+          <div className="consignes"><strong>Objectif : Revenir au calme et reprendre une respiration régulière.</strong><ul><li>On souffle et on détend tout le corps.</li></ul></div>
+          <TaskCard id="card-routineB-4" title="🧘 On souffle et on détend tout le corps" badgeTime="⏱️ 2 MIN" done={!!doneTasks['card-routineB-4']} onToggle={() => toggleTask('card-routineB-4', 120, false)} />
+        </div>
+      </div>
 
-     <div id="routineC" style={{ display: activeTab === 'routineC' ? 'block' : 'none' }}>
-       <div className="card">
-         <div className="card-header"><span className="card-title">🟢 1. ÉCHAUFFEMENT FACILE</span><span className="badge-time">⏱️ 3 MIN</span></div>
-         <div className="consignes"><strong>Objectif : Bien préparer ton corps.</strong><ul><li>Pédale tranquillement pour te mettre en route.</li></ul></div>
-         <TaskCard id="card-routineC-1" title="🚴 Pédalage en douceur" badgeTime="⏱️ 3 MIN" done={!!doneTasks['card-routineC-1']} onToggle={() => toggleTask('card-routineC-1', 180, false)} />
-       </div>
-       <div className="card">
-         <div className="card-header"><span className="card-title">⚡ 2. TENIR JUSQU’À LA FIN</span><span className="badge-time">⏱️ {formatTime(exerciseDurations['grid-long-routineC'] ?? 240)}</span></div>
-         <div className="consignes"><strong>Objectif : Garder une bonne intensité jusqu’au bout de la série.</strong><ul><li>{getWorkoutConfig(age).sprintDesc}</li></ul></div>
-         <GridControls id="grid-long-routineC" type="sprint" base={3} prefix="L" defaultExerciseDuration={240} exerciseDurations={exerciseDurations} perRepDurations={perRepDurations} doneTasks={doneTasks} setExerciseDurations={setExerciseDurations} setPerRepDurations={setPerRepDurations} toggleRep={toggleRep} resetGridSettings={resetGridSettings} getWorkoutConfig={getWorkoutConfig} age={age} />
-       </div>
-       <div className="card">
-         <div className="card-header"><span className="card-title">🔥 3. MULTI-RELANCES</span><span className="badge-time">⏱️ {formatTime(exerciseDurations['grid-relance-routineC'] ?? 180)}</span></div>
-         <div className="consignes"><strong>Objectif : Repartir avec énergie après chaque relance.</strong><ul><li>{getWorkoutConfig(age).gateDesc}</li></ul></div>
-         <GridControls id="grid-relance-routineC" type="gate" base={4} prefix="RA" defaultExerciseDuration={180} exerciseDurations={exerciseDurations} perRepDurations={perRepDurations} doneTasks={doneTasks} setExerciseDurations={setExerciseDurations} setPerRepDurations={setPerRepDurations} toggleRep={toggleRep} resetGridSettings={resetGridSettings} getWorkoutConfig={getWorkoutConfig} age={age} />
-       </div>
-       <div className="card">
-         <div className="card-header"><span className="card-title">🟢 4. RETOUR AU CALME</span><span className="badge-time">⏱️ 2 MIN</span></div>
-         <div className="consignes"><strong>Objectif : Revenir doucement à un rythme maîtrisé.</strong><ul><li>Respire profondément en gonflant bien ton ventre.</li></ul></div>
-         <TaskCard id="card-routineC-4" title="🧘 Respire profondément en gonflant bien ton ventre" badgeTime="⏱️ 2 MIN" done={!!doneTasks['card-routineC-4']} onToggle={() => toggleTask('card-routineC-4', 120, false)} />
-       </div>
-     </div>
+      <div id="routineC" style={{ display: activeTab === 'routineC' ? 'block' : 'none' }}>
+        <div className="card">
+          <div className="card-header"><span className="card-title">🟢 1. ÉCHAUFFEMENT FACILE</span><span className="badge-time">⏱️ 3 MIN</span></div>
+          <div className="consignes"><strong>Objectif : Bien préparer ton corps.</strong><ul><li>Pédale tranquillement pour te mettre en route.</li></ul></div>
+          <TaskCard id="card-routineC-1" title="🚴 Pédalage en douceur" badgeTime="⏱️ 3 MIN" done={!!doneTasks['card-routineC-1']} onToggle={() => toggleTask('card-routineC-1', 180, false)} />
+        </div>
+        <div className="card">
+          <div className="card-header"><span className="card-title">⚡ 2. TENIR JUSQU’À LA FIN</span><span className="badge-time">⏱️ {formatTime(exerciseDurations['grid-long-routineC'] ?? 240)}</span></div>
+          <div className="consignes"><strong>Objectif : Garder une bonne intensité jusqu’au bout de la série.</strong><ul><li>{getWorkoutConfig(age).sprintDesc}</li></ul></div>
+          <GridControls id="grid-long-routineC" type="sprint" base={3} prefix="L" defaultExerciseDuration={240} exerciseDurations={exerciseDurations} perRepDurations={perRepDurations} doneTasks={doneTasks} setExerciseDurations={setExerciseDurations} setPerRepDurations={setPerRepDurations} toggleRep={toggleRep} resetGridSettings={resetGridSettings} getWorkoutConfig={getWorkoutConfig} age={age} />
+        </div>
+        <div className="card">
+          <div className="card-header"><span className="card-title">🔥 3. MULTI-RELANCES</span><span className="badge-time">⏱️ {formatTime(exerciseDurations['grid-relance-routineC'] ?? 180)}</span></div>
+          <div className="consignes"><strong>Objectif : Repartir avec énergie après chaque relance.</strong><ul><li>{getWorkoutConfig(age).gateDesc}</li></ul></div>
+          <GridControls id="grid-relance-routineC" type="gate" base={4} prefix="RA" defaultExerciseDuration={180} exerciseDurations={exerciseDurations} perRepDurations={perRepDurations} doneTasks={doneTasks} setExerciseDurations={setExerciseDurations} setPerRepDurations={setPerRepDurations} toggleRep={toggleRep} resetGridSettings={resetGridSettings} getWorkoutConfig={getWorkoutConfig} age={age} />
+        </div>
+        <div className="card">
+          <div className="card-header"><span className="card-title">🟢 4. RETOUR AU CALME</span><span className="badge-time">⏱️ 2 MIN</span></div>
+          <div className="consignes"><strong>Objectif : Revenir doucement à un rythme maîtrisé.</strong><ul><li>Respire profondément en gonflant bien ton ventre.</li></ul></div>
+          <TaskCard id="card-routineC-4" title="🧘 Respire profondément en gonflant bien ton ventre" badgeTime="⏱️ 2 MIN" done={!!doneTasks['card-routineC-4']} onToggle={() => toggleTask('card-routineC-4', 120, false)} />
+        </div>
+      </div>
 
-     <div id="routineD" style={{ display: activeTab === 'routineD' ? 'block' : 'none' }}>
-       <div className="card">
-         <div className="card-header"><span className="card-title">🔵 1. PÉDALAGE LÉGER</span><span className="badge-time">⏱️ 3 MIN</span></div>
-         <div className="consignes"><strong>Objectif : Faire tourner tes jambes à fond sans forcer.</strong><ul><li>Pédale le plus vite possible mais sans résistance.</li></ul></div>
-         <TaskCard id="card-routineD-1" title="🚴 Vélocité maximale à vide" badgeTime="⏱️ 3 MIN" done={!!doneTasks['card-routineD-1']} onToggle={() => toggleTask('card-routineD-1', 180, false)} />
-       </div>
-       <div className="card">
-         <div className="card-header"><span className="card-title">⚡ 2. VITESSE MAXIMUM DES JAMBES</span><span className="badge-time">⏱️ 4 MIN</span></div>
-         <div className="consignes"><strong>Objectif : Aller le plus vite possible sur tes pédales.</strong><ul><li>{getWorkoutConfig(age).sprintDesc}</li></ul></div>
-         <GridControls id="grid-freq-routineD" type="sprint" base={4} prefix="V" defaultExerciseDuration={240} exerciseDurations={exerciseDurations} perRepDurations={perRepDurations} doneTasks={doneTasks} setExerciseDurations={setExerciseDurations} setPerRepDurations={setPerRepDurations} toggleRep={toggleRep} resetGridSettings={resetGridSettings} getWorkoutConfig={getWorkoutConfig} age={age} />
-       </div>
-       <div className="card">
-         <div className="card-header"><span className="card-title">🚀 3. JEU DE RÉFLEXES (FLASH)</span><span className="badge-time">⏱️ 3 MIN</span></div>
-         <div className="consignes"><strong>Objectif : Devenir un super-héros de la rapidité !</strong><ul><li>Pédale léger et tiens-toi prêt. Des doubles bips retentiront de façon aléatoire (avec au moins 10 secondes d'écart) pour déclencher un grand coup de pédale hyper rapide.</li></ul></div>
-         <GridControls id="grid-flash-routineD" type="gate" base={4} prefix="EF" defaultExerciseDuration={180} exerciseDurations={exerciseDurations} perRepDurations={perRepDurations} doneTasks={doneTasks} setExerciseDurations={setExerciseDurations} setPerRepDurations={setPerRepDurations} toggleRep={toggleRep} resetGridSettings={resetGridSettings} getWorkoutConfig={getWorkoutConfig} age={age} />
-       </div>
-       <div className="card">
-         <div className="card-header"><span className="card-title">🟢 4. RETOUR AU CALME</span><span className="badge-time">⏱️ 2 MIN</span></div>
-         <div className="consignes"><strong>Objectif : Clore la séance avec douceur.</strong><ul><li>On se détend, bravo, c'est terminé !</li></ul></div>
-         <TaskCard id="card-routineD-4" title="🧘 On se détend, bravo, c'est terminé !" badgeTime="⏱️ 2 MIN" done={!!doneTasks['card-routineD-4']} onToggle={() => toggleTask('card-routineD-4', 120, false)} />
-       </div>
-     </div>
+      <div id="routineD" style={{ display: activeTab === 'routineD' ? 'block' : 'none' }}>
+        <div className="card">
+          <div className="card-header"><span className="card-title">🔵 1. PÉDALAGE LÉGER</span><span className="badge-time">⏱️ 3 MIN</span></div>
+          <div className="consignes"><strong>Objectif : Faire tourner tes jambes à fond sans forcer.</strong><ul><li>Pédale le plus vite possible mais sans résistance.</li></ul></div>
+          <TaskCard id="card-routineD-1" title="🚴 Vélocité maximale à vide" badgeTime="⏱️ 3 MIN" done={!!doneTasks['card-routineD-1']} onToggle={() => toggleTask('card-routineD-1', 180, false)} />
+        </div>
+        <div className="card">
+          <div className="card-header"><span className="card-title">⚡ 2. VITESSE MAXIMUM DES JAMBES</span><span className="badge-time">⏱️ 4 MIN</span></div>
+          <div className="consignes"><strong>Objectif : Aller le plus vite possible sur tes pédales.</strong><ul><li>{getWorkoutConfig(age).sprintDesc}</li></ul></div>
+          <GridControls id="grid-freq-routineD" type="sprint" base={4} prefix="V" defaultExerciseDuration={240} exerciseDurations={exerciseDurations} perRepDurations={perRepDurations} doneTasks={doneTasks} setExerciseDurations={setExerciseDurations} setPerRepDurations={setPerRepDurations} toggleRep={toggleRep} resetGridSettings={resetGridSettings} getWorkoutConfig={getWorkoutConfig} age={age} />
+        </div>
+        <div className="card">
+          <div className="card-header"><span className="card-title">⚡ 3. JEUX DE RÉFLEXES (FLASH)</span><span className="badge-time">⏱️ {formatTime(exerciseDurations['grid-flash-routineD'] ?? 180)}</span></div>
+          <div className="consignes"><strong>Objectif : Réagir instantanément au signal.</strong><ul><li>{getWorkoutConfig(age).gateDesc}</li></ul></div>
+          <GridControls id="grid-flash-routineD" type="gate" base={4} prefix="EF" defaultExerciseDuration={180} exerciseDurations={exerciseDurations} perRepDurations={perRepDurations} doneTasks={doneTasks} setExerciseDurations={setExerciseDurations} setPerRepDurations={setPerRepDurations} toggleRep={toggleRep} resetGridSettings={resetGridSettings} getWorkoutConfig={getWorkoutConfig} age={age} />
+        </div>
+        <div className="card">
+          <div className="card-header"><span className="card-title">🟢 4. RETOUR AU CALME</span><span className="badge-time">⏱️ 2 MIN</span></div>
+          <div className="consignes"><strong>Objectif : Finir l'entraînement en souplesse.</strong><ul><li>Pédale tranquillement pour faire redescendre le cardio.</li></ul></div>
+          <TaskCard id="card-routineD-4" title="🧘 Pédalage de récupération finale" badgeTime="⏱️ 2 MIN" done={!!doneTasks['card-routineD-4']} onToggle={() => toggleTask('card-routineD-4', 120, false)} />
+        </div>
+      </div>
 
-     <div id="victoryCard" className={`victory-card ${checkVictoryFor(activeTab) ? 'show' : ''}`}>
-       <h2 style={{ margin: '0 0 4px 0' }}>🏆 WARMUP VALIDÉ !</h2>
-       <p style={{ margin: 0, fontWeight: 'bold' }}>Super boulot, tu es prêt à tout déchirer sur la piste !</p>
-     </div>
-
-     <TimerBar timerSeconds={timerSeconds} isRunning={isRunning} isAudioPending={isAudioPending} toggleTimer={toggleTimer} resetTimer={resetTimer} getPhaseLabel={getPhaseLabel} />
-   </div>
- )
+      <TimerBar
+        timerSeconds={timerSeconds}
+        isRunning={isRunning}
+        isAudioPending={isAudioPending}
+        getPhaseLabel={getPhaseLabel}
+        toggleTimer={toggleTimer}
+        resetTimer={resetTimer}
+      />
+    </div>
+  )
 }

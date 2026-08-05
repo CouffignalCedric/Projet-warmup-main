@@ -3,15 +3,13 @@
     "target": "ESNext",
     "lib": ["DOM", "ESNext"],
     "jsx": "react-jsx",
-    "module": "Node16",
-    "moduleResolution": "node16",
-    "ignoreDeprecations": "6.0",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "ignoreDeprecations": "5.0",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true,
-    "baseUrl": ".",
-    "paths": {"@/*": ["src/*"]}
+    "forceConsistentCasingInFileNames": true
   },
   "include": ["src"]
 }
