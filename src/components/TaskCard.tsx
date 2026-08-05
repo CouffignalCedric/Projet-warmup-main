@@ -15,9 +15,8 @@ export default function TaskCard({ id, title, done, onToggle, children }: Props)
       {/* Parent provides header and consignes; TaskCard only renders the action button */}
       <button className={`btn-check-list ${done ? 'done' : ''}`} onClick={onToggle} aria-pressed={done} aria-labelledby={`${id}-label`}>
         <span id={`${id}-label`} className="task-label">{title}</span>
-        <span className="task-state">{done ? '☑' : '☐'}</span>
+      {/*  <span className="task-state">{done ? '☑' : '☐'}</span>*/}
       </button>
-      {children}
     </div>
   )
 }
