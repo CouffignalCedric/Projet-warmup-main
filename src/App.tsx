@@ -5,7 +5,7 @@ import TimerBar from './components/TimerBar'
 import GridControls from './components/GridControls'
 import TaskCard from './components/TaskCard'
 import { playExerciseFinished, playSlowDown, stopAudio } from './services/audioService'
-
+import { unlockAudio as unlockAudioIOS } from './services/audioService'
 const SOUND_BMX_GATE = '/watch_the_gate.mp3'
 
 type GridDef = { id: string; type: 'gate' | 'sprint'; base: number; prefix: string; name: string; routine: string }
@@ -147,8 +147,10 @@ export default function App() {
   }, [age])
 
   function unlockAudio() {
-    // La fonction d'origine manipulait l'AudioContext, conservée pour compatibilité
-  }
+4
+unlockAudioIOS()
+5
+}
 
   function startDoubleTimer(effort: number, rest: number) {
     clearIntervalIfAny()
