@@ -15,27 +15,36 @@ export async function unlockAudio() {
 
     await endAudio.play()
     endAudio.pause()
-    endAudio.currentTime = 0
 
     await slowAudio.play()
     slowAudio.pause()
+
+    endAudio.currentTime = 0
     slowAudio.currentTime = 0
 
     endAudio.muted = false
     slowAudio.muted = false
 
     unlocked = true
-  } catch (e) {
-    console.warn('Audio non débloqué', e)
+  } catch (err) {
+    console.warn(err)
   }
 }
 
-export async function playExerciseFinished() {
+export function stopAudio() {
+  endAudio.pause()
+  slowAudio.pause()
+
+  endAudio.currentTime = 0
+  slowAudio.currentTime = 0
+}
+
+export function playExerciseFinished() {
   endAudio.currentTime = 0
   return endAudio.play()
 }
 
-export async function playSlowDown() {
+export function playSlowDown() {
   slowAudio.currentTime = 0
   return slowAudio.play()
 }
