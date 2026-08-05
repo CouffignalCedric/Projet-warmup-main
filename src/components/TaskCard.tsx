@@ -9,7 +9,7 @@ type Props = {
   onToggle: () => void
 }
 
-export default function TaskCard({ id, title, badgeTime, children, done, onToggle }: Props) {
+export default function TaskCard({ id, title, done, onToggle, children }: Props) {
   return (
     <div>
       {/* Parent provides header and consignes; TaskCard only renders the action button */}
@@ -17,6 +17,7 @@ export default function TaskCard({ id, title, badgeTime, children, done, onToggl
         <span id={`${id}-label`} className="task-label">{title}</span>
         <span className="task-state">{done ? '☑' : '☐'}</span>
       </button>
+      {children}
     </div>
   )
 }

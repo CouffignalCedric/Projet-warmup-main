@@ -1,9 +1,10 @@
-import React, { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Header from './components/Header'
 import AgeSelector from './components/AgeSelector'
 import TimerBar from './components/TimerBar'
 import GridControls from './components/GridControls'
 import TaskCard from './components/TaskCard'
+import { playExerciseFinished, playSlowDown, stopAudio } from './services/audioService'
 
 const SOUND_BMX_GATE = '/watch_the_gate.mp3'
 
@@ -145,14 +146,8 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [age])
 
-  const audioCtxRef = useRef<AudioContext | null>(null)
   function unlockAudio() {
-    if (!audioCtxRef.current) {
-      audioCtxRef.current = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)()
-    }
-    if (audioCtxRef.current.state === 'suspended') {
-      audioCtxRef.current.resume()
-    }
+    // La fonction d'origine manipulait l'AudioContext, conservée pour compatibilité
   }
 
   function startDoubleTimer(effort: number, rest: number) {
@@ -187,58 +182,13 @@ export default function App() {
     audio.play().catch(handleStartEffort)
   }
 
-  function playDoubleBeep() {
-    unlockAudio()
-    if (audioCtxRef.current) {
-      try {
-        const ctx = audioCtxRef.current
-        const now = ctx.currentTime
-
-        const osc1 = ctx.createOscillator()
-        const gain1 = ctx.createGain()
-        osc1.type = 'sine'
-        osc1.frequency.setValueAtTime(880, now)
-        gain1.gain.setValueAtTime(0.15, now)
-        gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.12)
-        osc1.connect(gain1)
-        gain1.connect(ctx.destination)
-        osc1.start(now)
-        osc1.stop(now + 0.12)
-
-        const osc2 = ctx.createOscillator()
-        const gain2 = ctx.createGain()
-        osc2.type = 'sine'
-        osc2.frequency.setValueAtTime(1174.66, now + 0.18)
-        gain2.gain.setValueAtTime(0.15, now + 0.18)
-        gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.3)
-        osc2.connect(gain2)
-        gain2.connect(ctx.destination)
-        osc2.start(now + 0.18)
-        osc2.stop(now + 0.3)
-      } catch (err) {
-        console.log('Erreur lecture double bip:', err)
-      }
-    }
+  function playAndSound() {
+    playExerciseFinished()
   }
 
-function speak(text: string) {
-  if (!('speechSynthesis' in window)) return
-
-  try {
-    window.speechSynthesis.cancel()
-
-    const msg = new SpeechSynthesisUtterance(text)
-    msg.lang = 'fr-FR'
-    msg.rate = 1
-    msg.volume = 1
-
-    window.speechSynthesis.speak(msg)
-
-    console.log('Parole lancée :', text)
-  } catch (e) {
-    console.error(e)
+  function playRalentiSound() {
+    playSlowDown()
   }
-}
 
   function updateGrids() {
     const newDone: Record<string, boolean> = {}
@@ -364,7 +314,7 @@ function speak(text: string) {
         if (timerSeconds > 5 && timerSeconds < (totalTaskDuration.current - 5)) {
           if (lastBeepTimerSeconds.current - timerSeconds >= 10) {
             if (Math.random() < 0.30) {
-              playDoubleBeep()
+              playAndSound()
               if ((navigator as unknown as { vibrate?: (pattern: number | number[]) => boolean }).vibrate) {
                 (navigator as unknown as { vibrate: (pattern: number | number[]) => boolean }).vibrate([150, 80, 150])
               }
@@ -378,7 +328,7 @@ function speak(text: string) {
           currentPhase.current = 'rest'
           const rest = savedRest.current
           setTimerSeconds(rest)
-          speak('Ralenti !')
+          playRalentiSound()
           triggerOverlay('rest', 7000)
         } else if (currentPhase.current === 'rest') {
           clearIntervalIfAny()
@@ -395,7 +345,7 @@ function speak(text: string) {
             return
           }
 
-          terminateTimer('EXERCICE TERMINÉ', 'Exercice terminé')
+          terminateTimer('EXERCICE TERMINÉ')
           triggerOverlay('finish', 7000)
           return
         }
@@ -419,6 +369,7 @@ function speak(text: string) {
     }
     clearAudioStartTimeout()
     setIsAudioPending(false)
+    stopAudio()
   }
 
   function startSingleTimer(duration: number, randomBeepsActive: boolean) {
@@ -439,14 +390,14 @@ function speak(text: string) {
     }
   }
 
-  function terminateTimer(label: string, vocal: string) {
+  function terminateTimer(label?: string) {
     stopCurrentAudio()
     clearIntervalIfAny()
     setIsRunning(false)
     currentPhase.current = 'idle'
     isRandomBeepMode.current = false
     setTimerSeconds(0)
-    speak(vocal)
+    playExerciseFinished()
   }
 
   function resetTimer() {
@@ -471,7 +422,6 @@ function speak(text: string) {
     unlockAudio()
     if (isRunning) {
       setIsRunning(false)
-      speak('Pause')
       return
     }
     const cfg = getWorkoutConfig(age)
@@ -657,25 +607,27 @@ function speak(text: string) {
       <div id="routineD" style={{ display: activeTab === 'routineD' ? 'block' : 'none' }}>
         <div className="card">
           <div className="card-header"><span className="card-title">🔵 1. PÉDALAGE LÉGER</span><span className="badge-time">⏱️ 3 MIN</span></div>
-          <div className="consignes"><strong>Objectif : Faire tourner tes jambes à fond sans forcer.</strong><ul><li>Pédale le plus vite possible mais sans résistance.</li></ul></div>
-          <TaskCard id="card-routineD-1" title="🚴 Vélocité maximale à vide" badgeTime="⏱️ 3 MIN" done={!!doneTasks['card-routineD-1']} onToggle={() => toggleTask('card-routineD-1', 180, false)} />
+          <div className="consignes"><strong>Objectif : Faire tourner tes jambes sans forcer.</strong><ul><li>Pédale de façon souple pour préparer la suite.</li></ul></div>
+          <TaskCard id="card-routineD-1" title="🚴 Pédalage souple" badgeTime="⏱️ 3 MIN" done={!!doneTasks['card-routineD-1']} onToggle={() => toggleTask('card-routineD-1', 180, false)} />
         </div>
         <div className="card">
           <div className="card-header"><span className="card-title">⚡ 2. VITESSE MAXIMUM DES JAMBES</span><span className="badge-time">⏱️ {formatTime(exerciseDurations['grid-freq-routineD'] ?? 240)}</span></div>
-          <div className="consignes"><strong>Objectif : Pédaler à la cadence maximale.</strong><ul><li>{getWorkoutConfig(age).sprintDesc}</li></ul></div>
+          <div className="consignes"><strong>Objectif : Faire tourner tes jambes à pleine vitesse.</strong><ul><li>{getWorkoutConfig(age).sprintDesc}</li></ul></div>
           <GridControls id="grid-freq-routineD" type="sprint" base={4} prefix="V" defaultExerciseDuration={240} exerciseDurations={exerciseDurations} perRepDurations={perRepDurations} doneTasks={doneTasks} setExerciseDurations={setExerciseDurations} setPerRepDurations={setPerRepDurations} toggleRep={toggleRep} resetGridSettings={resetGridSettings} getWorkoutConfig={getWorkoutConfig} age={age} />
         </div>
         <div className="card">
-          <div className="card-header"><span className="card-title">🔥 3. JEU DE RÉFLEXES (FLASH)</span><span className="badge-time">⏱️ {formatTime(exerciseDurations['grid-flash-routineD'] ?? 180)}</span></div>
-          <div className="consignes"><strong>Objectif : Sortir de la grille au signal sans hésiter.</strong><ul><li>{getWorkoutConfig(age).gateDesc}</li></ul></div>
+          <div className="card-header"><span className="card-title">🎮 3. JEUX DE RÉFLEXES (FLASH)</span><span className="badge-time">⏱️ {formatTime(exerciseDurations['grid-flash-routineD'] ?? 180)}</span></div>
+          <div className="consignes"><strong>Objectif : Démarrer instantanément au signal.</strong><ul><li>{getWorkoutConfig(age).gateDesc}</li></ul></div>
           <GridControls id="grid-flash-routineD" type="gate" base={4} prefix="EF" defaultExerciseDuration={180} exerciseDurations={exerciseDurations} perRepDurations={perRepDurations} doneTasks={doneTasks} setExerciseDurations={setExerciseDurations} setPerRepDurations={setPerRepDurations} toggleRep={toggleRep} resetGridSettings={resetGridSettings} getWorkoutConfig={getWorkoutConfig} age={age} />
         </div>
         <div className="card">
           <div className="card-header"><span className="card-title">🟢 4. RETOUR AU CALME</span><span className="badge-time">⏱️ 2 MIN</span></div>
-          <div className="consignes"><strong>Objectif : Retrouver un calme olympien.</strong><ul><li>Pédale très lentement et bois un peu d'eau si besoin.</li></ul></div>
-          <TaskCard id="card-routineD-4" title="🧘 Pédale très lentement pour finir" badgeTime="⏱️ 2 MIN" done={!!doneTasks['card-routineD-4']} onToggle={() => toggleTask('card-routineD-4', 120, false)} />
+          <div className="consignes"><strong>Objectif : Finir en douceur et détendre les muscles.</strong><ul><li>Roule lentement et respire calmement.</li></ul></div>
+          <TaskCard id="card-routineD-4" title="🧘 Roule lentement et respire calmement" badgeTime="⏱️ 2 MIN" done={!!doneTasks['card-routineD-4']} onToggle={() => toggleTask('card-routineD-4', 120, false)} />
         </div>
-      </div><TimerBar
+      </div>
+
+      <TimerBar
   timerSeconds={timerSeconds}
   isRunning={isRunning}
   isAudioPending={isAudioPending}
@@ -685,5 +637,4 @@ function speak(text: string) {
 />
     </div>
   )
-  
 }
