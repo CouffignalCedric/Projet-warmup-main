@@ -667,7 +667,15 @@ export default function App() {
           <div className="consignes"><strong>Objectif : Retrouver un calme olympien.</strong><ul><li>Pédale très lentement et bois un peu d'eau si besoin.</li></ul></div>
           <TaskCard id="card-routineD-4" title="🧘 Pédale très lentement pour finir" badgeTime="⏱️ 2 MIN" done={!!doneTasks['card-routineD-4']} onToggle={() => toggleTask('card-routineD-4', 120, false)} />
         </div>
-      </div>
+      </div><TimerBar
+  timerSeconds={timerSeconds}
+  isRunning={isRunning}
+  isAudioPending={isAudioPending}
+  getPhaseLabel={getPhaseLabel}
+  toggleTimer={toggleTimer}
+  resetTimer={resetTimer}
+/>
     </div>
   )
+  
 }
