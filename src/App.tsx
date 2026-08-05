@@ -221,16 +221,24 @@ export default function App() {
     }
   }
 
-  function speak(text: string) {
-    if ('speechSynthesis' in window) {
-      window.speechSynthesis.cancel()
-      if (!text) return
-      const msg = new SpeechSynthesisUtterance(text)
-      msg.lang = 'fr-FR'
-      msg.rate = 1.2
-      window.speechSynthesis.speak(msg)
-    }
+function speak(text: string) {
+  if (!('speechSynthesis' in window)) return
+
+  try {
+    window.speechSynthesis.cancel()
+
+    const msg = new SpeechSynthesisUtterance(text)
+    msg.lang = 'fr-FR'
+    msg.rate = 1
+    msg.volume = 1
+
+    window.speechSynthesis.speak(msg)
+
+    console.log('Parole lancée :', text)
+  } catch (e) {
+    console.error(e)
   }
+}
 
   function updateGrids() {
     const newDone: Record<string, boolean> = {}
