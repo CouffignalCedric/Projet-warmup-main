@@ -6,6 +6,8 @@ import GridControls from './components/GridControls'
 import TaskCard from './components/TaskCard'
 
 const SOUND_BMX_GATE = '/watch_the_gate.mp3'
+const SOUND_RALENTI = '/ralenti.mp3'
+const SOUND_END = '/end.mp3'
 
 type GridDef = { id: string; type: 'gate' | 'sprint'; base: number; prefix: string; name: string; routine: string }
 type OverlayType = 'go' | 'rest' | 'finish' | null
@@ -240,6 +242,15 @@ function speak(text: string) {
   }
 }
 
+function playSound(filePath: string) {
+  try {
+    const audio = new Audio(filePath)
+    audio.play().catch(err => console.log('Erreur lecture son:', err))
+  } catch (err) {
+    console.log('Erreur création son:', err)
+  }
+}
+
   function updateGrids() {
     const newDone: Record<string, boolean> = {}
     GRIDS.forEach(g => {
@@ -378,7 +389,7 @@ function speak(text: string) {
           currentPhase.current = 'rest'
           const rest = savedRest.current
           setTimerSeconds(rest)
-          speak('Ralenti !')
+          playSound(SOUND_RALENTI)
           triggerOverlay('rest', 7000)
         } else if (currentPhase.current === 'rest') {
           clearIntervalIfAny()
@@ -395,7 +406,7 @@ function speak(text: string) {
             return
           }
 
-          terminateTimer('EXERCICE TERMINÉ', 'Exercice terminé')
+          terminateTimer('EXERCICE TERMINÉ', SOUND_END)
           triggerOverlay('finish', 7000)
           return
         }
@@ -446,7 +457,11 @@ function speak(text: string) {
     currentPhase.current = 'idle'
     isRandomBeepMode.current = false
     setTimerSeconds(0)
-    speak(vocal)
+    if (vocal.endsWith('.mp3')) {
+      playSound(vocal)
+    } else {
+      speak(vocal)
+    }
   }
 
   function resetTimer() {
